@@ -32,5 +32,10 @@
                     ## __VA_ARGS__);                                          \
         }                                                                      \
     while (0)
+        
+#define SHOW_BUFFER(buf, len) do {\
+                              for (int i=0; i<len; i++)\
+                                putchar(buf[i]);\
+                              } while (0)
 
 #endif

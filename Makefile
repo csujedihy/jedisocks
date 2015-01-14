@@ -6,10 +6,29 @@ RTFLAGS=-framework CoreServices
 endif
 OLEVEL=-O2 -DNDEBUG
 CFLAGS=-Wall $(OLEVEL) -std=gnu99 -luv
-FILES=local.c
-APP=js-local
+LOCALFILES=local.c
+LOCALAPP=js-local
+SERVERFILES=server.c
+SERVERAPP=js-server
+TESTFILE=test.c
+TESTAPP=test
 
-all: $(FILES)
+all: server local
+local: $(LOCALFILES)
 	$(CC) $(CFLAGS) -o \
-	$(APP) $(FILES) \
+	$(LOCALAPP) $(LOCALFILES) \
 	-lcrypto -lm $(RTFLAGS)
+
+server:	$(SERVERFILES)
+	$(CC) $(CFLAGS) -o \
+	$(SERVERAPP) $(SERVERFILES) \
+	-lcrypto -lm $(RTFLAGS)
+
+test: $(TESTFILE)
+	$(CC) $(CFLAGS) -o \
+	$(TESTAPP) $(TESTFILE) \
+	-lcrypto -lm $(RTFLAGS)
+
+clean:
+	rm -rf $(SERVERAPP) $(LOCALAPP) $(TESTAPP)
+	rm -rf *.o

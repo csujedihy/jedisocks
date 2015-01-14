@@ -12,46 +12,53 @@ typedef struct {
   uv_buf_t buf;
 } write_req_t;
 
-void socks_handshake_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t *buf);
-void socks_handshake_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf);
-void write_cb(uv_write_t *req, int status);
+static void socks_handshake_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t *buf);
+static void socks_handshake_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf);
+static void write_cb(uv_write_t *req, int status);
+static void connect_to_remote_cb(uv_connect_t* req, int status);
 
 int total_read;
 int total_written;
 
 uv_loop_t *loop;
 
-void accept_cb(uv_stream_t *server, int status) {
-  if (status) ERROR("async connect", status);
-  LOGD("here?");
-  socks_handshake *socks_hsctx = calloc(1,sizeof(socks_handshake));
-  socks_hsctx->server.data = socks_hsctx;
-  uv_tcp_init(loop, &socks_hsctx->server);
+static void connect_to_remote_cb(uv_connect_t* req, int status) {
+    remote_ctx_t* ctx = (remote_ctx_t *)req->data;
+    if (status) {
+        uv_close((uv_handle_t*)&ctx->remote, NULL);
+        free(req);
+        return;
+    }
 
-  int r = uv_accept(server, (uv_stream_t*) &socks_hsctx->server);
-  if (r) {
-    fprintf(stderr, "errror accepting connection %d", r);
-    uv_close((uv_handle_t*) &socks_hsctx->server, NULL);
-  } else {
-    uv_read_start((uv_stream_t*) &socks_hsctx->server, socks_handshake_alloc_cb,
-                socks_handshake_read_cb);
-  }
+    free(req);
+    LOGD("Connected to remote");
+
+}   
+
+static void accept_cb(uv_stream_t *server, int status) {
+    if (status) ERROR("async connect", status);
+    socks_handshake *socks_hsctx = calloc(1,sizeof(socks_handshake));
+    socks_hsctx->server.data = socks_hsctx;
+    uv_tcp_init(loop, &socks_hsctx->server);    
+    int r = uv_accept(server, (uv_stream_t*) &socks_hsctx->server);
+    if (r) {
+      fprintf(stderr, "error accepting connection %d", r);
+      uv_close((uv_handle_t*) &socks_hsctx->server, NULL);
+    } else {
+      uv_read_start((uv_stream_t*) &socks_hsctx->server, socks_handshake_alloc_cb,
+                  socks_handshake_read_cb);
+    }
 }
 
-void socks_handshake_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t *buf) {
-  *buf = uv_buf_init((char*) malloc(size), size);
-  assert(buf->base != NULL);
+static void socks_handshake_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t *buf) {
+    *buf = uv_buf_init((char*) malloc(size), size);
+    assert(buf->base != NULL);
 }
 
-void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf) {
+static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf) {
     if (nread == UV_EOF) {
-        // XXX: this is actually a bug, since client writes could back up (see ./test-client.sh) and therefore
-        // some chunks to be written be left in the pipe.
-        // Closing in that case results in: [ECANCELED: operation canceled]
-        // Not closing here avoids that error and a few more chunks get written.
-        // But even then not ALL of them make it through and things get stuck.
         uv_close((uv_handle_t*) client, NULL);
-
+        // for debug
         fprintf(stderr, "closed client connection\n");
         fprintf(stderr, "Total read:    %d\n", total_read);
         fprintf(stderr, "Total written: %d\n", total_written);
@@ -59,11 +66,8 @@ void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t 
     } else if (nread > 0) {
         socks_handshake *socks_hsctx = client->data;
         if (socks_hsctx->stage == 2) {
-             LOGD("stage = 2");
-            for (int i = 0; i < nread; ++i)
-            {
-                printf("%c", buf->base[i]);
-            }
+            LOGD("stage = 2");
+            SHOW_BUFFER(buf->base,nread);
             free(buf->base);
         }
 
@@ -83,9 +87,10 @@ void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t 
             uv_write(&wr->req, client, &wr->buf, 1/*nbufs*/, write_cb);
             socks_hsctx->stage = 1;
             // sent the 1st response -> switch to the stage 1
-            // free(buf->base);
+            free(buf->base);
         } else if (socks_hsctx->stage == 1){
             // received 2nd request in stage 1
+            // here we have to parse the requested domain or ip address
             socks5_req_or_resp_t* req = (socks5_req_or_resp_t*)buf->base;
             socks5_req_or_resp_t* resp = calloc(1, sizeof(socks5_req_or_resp_t));
             memcpy(resp, req, sizeof(socks5_req_or_resp_t) - 4);  // only copy the first 4 bytes to save time
@@ -103,38 +108,48 @@ void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t 
     if (nread == 0) free(buf->base);
 }
 
-void write_cb(uv_write_t *req, int status) {
-  write_req_t* wr;
-  wr = (write_req_t*) req;
+static void write_cb(uv_write_t *req, int status) {
+    write_req_t* wr;
+    wr = (write_req_t*) req;
 
-  int written = wr->buf.len;
-  if (status) ERROR("async write", status);
-  assert(wr->req.type == UV_WRITE);
-  fprintf(stderr, "%d bytes written\n", written);
-  total_written += written;
+    int written = wr->buf.len;
+    if (status) ERROR("async write", status);
+    assert(wr->req.type == UV_WRITE);
+    fprintf(stderr, "%d bytes written\n", written);
+    total_written += written;
 
-  /* Free the read/write buffer and the request */
-  free(wr->buf.base);
-  free(wr);
+    /* Free the read/write buffer and the request */
+    free(wr->buf.base);
+    free(wr);
 }
 
 int main() {
-  loop = uv_default_loop();
-  server_ctx *socks_ctx = calloc(1, sizeof(server_ctx));
-  socks_ctx->server.data = socks_ctx;
-  uv_tcp_init(loop, &socks_ctx->server);
+    struct sockaddr_in bind_addr;
+    struct sockaddr_in connect_addr;
 
-  struct sockaddr_in bind_addr;
-  int r = uv_ip4_addr("0.0.0.0", 7000, &bind_addr);
-  LOGD("r = %d",r);
-  r = uv_tcp_bind(&socks_ctx->server, (struct sockaddr*)&bind_addr, 0);
-  if(r < 0)
-  	ERROR("bind error", r);
-  r = uv_listen((uv_stream_t*) &socks_ctx->server, 128 /*backlog*/, accept_cb);
-  if (r) ERROR("listen error", r)
+    loop = uv_default_loop();
+    server_ctx *socks_ctx = calloc(1, sizeof(server_ctx));
+    remote_ctx_t *remote_ctx = calloc(1, sizeof(remote_ctx_t));
+    uv_connect_t *req = (uv_connect_t *)malloc(sizeof(uv_connect_t));
 
-  fprintf(stderr, "Listening on localhost:7000\n");
+    socks_ctx->server.data = socks_ctx;
+    socks_ctx->remote_ctx = remote_ctx;
 
-  uv_run(loop, UV_RUN_DEFAULT);
-  return 0;
+    uv_tcp_init(loop, &socks_ctx->server);
+    uv_tcp_init(loop, &remote_ctx->remote);
+    
+    int r = uv_ip4_addr("127.0.0.1", 7001, &connect_addr);
+    r = uv_tcp_connect(req, &remote_ctx->remote, connect_addr, connect_to_remote_cb);
+    r = uv_ip4_addr("0.0.0.0", 7000, &bind_addr);
+    LOGD("r = %d",r);
+    r = uv_tcp_bind(&socks_ctx->server, (struct sockaddr*)&bind_addr, 0);
+    if(r < 0)
+    	ERROR("bind error", r);
+    r = uv_listen((uv_stream_t*) &socks_ctx->server, 128 /*backlog*/, accept_cb);
+    if (r) ERROR("listen error", r)
+
+    fprintf(stderr, "Listening on localhost:7000\n");
+
+    uv_run(loop, UV_RUN_DEFAULT);
+    return 0;
 }
