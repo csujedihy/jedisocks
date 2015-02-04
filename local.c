@@ -5,26 +5,115 @@
 #include "utils.h"
 #include "local.h"
 #include "socks5.h"
-
-
-typedef struct {
-  uv_write_t req;
-  uv_buf_t buf;
-} write_req_t;
+#include "c_map.h"
 
 static void socks_handshake_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t *buf);
 static void socks_handshake_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf);
+static void socks_write_cb(uv_write_t* req, int status);
+static void remote_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t *buf);
+static void remote_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf);
 static void write_cb(uv_write_t *req, int status);
+
 static void connect_to_remote_cb(uv_connect_t* req, int status);
 static void accept_cb(uv_stream_t *server, int status);
-
+int verbose = 0;
 int total_read;
 int total_written;
 int s_id = 0;
 uv_loop_t *loop;
+FILE * logfile;
+// remote in local means the connection between client and server
 remote_ctx_t *remote_ctx_long;
 queue_t* send_queue;
 
+static void socks_write_cb(uv_write_t* req, int status) {
+    write_req_t* wr = (write_req_t*)req;
+    socks_handshake* socks = (socks_handshake*)req->data;
+    if (status) {
+        LOGD("socks write error");
+    }
+    /* Free the read/write buffer and the request */
+    free(wr->buf.base);
+    free(wr);
+}
+
+static void remote_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t *buf) {
+    *buf = uv_buf_init((char*) malloc(remote_ctx_long->expect_to_recv), remote_ctx_long->expect_to_recv);
+    assert(buf->base != NULL);
+}
+
+static void remote_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf) {
+    if (verbose) LOGD("nread = %d\n", nread);
+    if (nread == UV_EOF) {
+        uv_close((uv_handle_t*) client, NULL);
+    } else if (nread > 0) {
+        remote_ctx_t* ctx = (remote_ctx_t*)client->data;
+        if (!ctx->reset) {
+            if (verbose)  LOGD("reset packet and buffer\n");
+            ctx->reset = 1;
+            ctx->buf_len = 0;
+            ctx->offset = 0;
+            memset(ctx->packet_buf, 0, MAX_PKT_SIZE);
+            memset(&ctx->tmp_packet, 0, sizeof(tmp_packet_t));
+            ctx->stage = 0;
+            
+        }
+        if (verbose) LOGD("buf_len before = %d\n", ctx->buf_len);
+        memcpy(ctx->packet_buf + ctx->buf_len, buf->base, nread);  // copy current buf to packet_buf
+        ctx->buf_len += nread;  // record how much data we put in the packet_buf
+        if (verbose) LOGD("buf_len after = %d\n", ctx->buf_len);
+
+        // TODO: fix the expected to recv buffer size
+        if (ctx->stage == 0) {
+            if (ctx->buf_len == EXP_TO_RECV_LEN) {
+                pkt_access(&ctx->tmp_packet.session_id, ctx->packet_buf, ID_LEN, ctx->offset);
+                ctx->tmp_packet.session_id = ntohl((uint32_t)ctx->tmp_packet.session_id);
+                LOGD("session_id = %d\n", ctx->tmp_packet.session_id);
+                pkt_access(&ctx->tmp_packet.rsv, ctx->packet_buf, RSV_LEN, ctx->offset);
+                pkt_access(&ctx->tmp_packet.datalen, ctx->packet_buf, DATALEN_LEN, ctx->offset);
+                ctx->tmp_packet.datalen = ntohs((uint16_t)ctx->tmp_packet.datalen);
+                if (verbose) LOGD("datalen = %d\n", ctx->tmp_packet.datalen);
+                ctx->expect_to_recv = ctx->tmp_packet.datalen;
+                ctx->stage = 1;
+            }
+            else{
+                LOGD("< header length... gather more");
+                ctx->expect_to_recv = EXP_TO_RECV_LEN - ctx->buf_len;
+                return;
+            }
+        
+        } else if (ctx->stage == 1) {
+            if (ctx->buf_len == EXP_TO_RECV_LEN + ctx->tmp_packet.datalen) {
+                ctx->reset = 0;
+                if (verbose)  LOGD("data enough\n");
+                socks_handshake* socks = NULL;
+                if (find_c_map(ctx->idfd_map, &ctx->tmp_packet.session_id, &socks))
+                {
+                    socks->response = malloc(ctx->tmp_packet.datalen);
+                    pkt_access(socks->response, ctx->packet_buf, ctx->tmp_packet.datalen, ctx->offset);
+                    write_req_t* wr = malloc(sizeof(write_req_t));
+                    wr->req.data = socks;
+                    wr->buf = uv_buf_init(socks->response, ctx->tmp_packet.datalen);
+                    uv_write(&wr->req, (uv_stream_t*)&socks->server, &wr->buf, 1, socks_write_cb);
+                   // LOGD("response\n");
+                    
+                }
+                else {
+                    LOGD("found nothing in the map\n");
+                    assert(0);
+                }
+                ctx->expect_to_recv = EXP_TO_RECV_LEN;
+            } else if (ctx->buf_len < EXP_TO_RECV_LEN + ctx->tmp_packet.datalen) {
+                LOGD("< datalen... gather more");
+                ctx->expect_to_recv = EXP_TO_RECV_LEN + ctx->tmp_packet.datalen - ctx->buf_len;
+                return;
+            } else {
+                LOGD("impossible! should never reach here (> datalen)\n");
+            }
+        }
+        free(buf->base);
+    }
+}
 // Init long connection to your server
 static void connect_to_remote_cb(uv_connect_t* req, int status) {
     remote_ctx_t* ctx = (remote_ctx_t *)req->data;
@@ -33,13 +122,14 @@ static void connect_to_remote_cb(uv_connect_t* req, int status) {
         free(req);
         return;
     }
-
-    free(req);
-
-    LOGD("Connected to remote");
+    req->handle->data = ctx;
+    struct clib_map* map = new_c_map (compare_id, NULL, NULL);
+    ctx->idfd_map = map;
+    uv_read_start(req->handle, remote_alloc_cb, remote_read_cb);
+    fprintf(stderr, "Connected to remote\n");
     int r = uv_listen((uv_stream_t*) &remote_ctx_long->listen->server, 128 /*backlog*/, accept_cb);
     if (r) ERROR("listen error", r)
-    LOGD("Listening on localhost:7000\n");
+    fprintf(stderr, "Listening on localhost:7000\n");
 
 }   
 
@@ -64,47 +154,18 @@ static void socks_handshake_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t 
 }
 
 static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf) {
+    if (verbose)  LOGD("nread = %d", nread);
     if (nread == UV_EOF) {
         uv_close((uv_handle_t*) client, NULL);
         // for debug
         fprintf(stderr, "closed client connection\n");
-        fprintf(stderr, "Total read:    %d\n", total_read);
-        fprintf(stderr, "Total written: %d\n", total_written);
-        total_read = total_written = 0;
     } else if (nread > 0) {
         socks_handshake *socks_hsctx = client->data;
         if (socks_hsctx->stage == 2) {
-            // here we create a session to multiplex the long connection 
-            /*
-
-            if init == 0
-                ~~~~~~~~~~________________________________________________________________________________________
-                | IV_KEY  | ID, 4 | RSV, 1 | DATALEN, 2 | ATYP, 1 | ADDRLEN, 1 | ADDR, VAR | PORT, 2 | DATA, VAR |
-                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-            else
-                ___________________________________________
-                | ID, 4 | RSV, 1 | DATALEN, 2 | DATA, VAR |
-                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-            
-            #define ID_LEN 4
-            #define DATALEN_LEN 2
-            #define ATYP_LEN 1
-            #define ADDRLEN_LEN  
-            #define PORT_LEN 2
-
-            */
-
-            #define ID_LEN 4
-            #define RSV_LEN 1
-            #define DATALEN_LEN 2
-            #define ATYP_LEN 1
-            #define ADDRLEN_LEN  2
-            #define PORT_LEN 2
-
-            
             if (!socks_hsctx->init) {
                 socks_hsctx->init = 1;
                 socks_hsctx->session_id = ++s_id;
+                insert_c_map (remote_ctx_long->idfd_map, &socks_hsctx->session_id, sizeof(int), socks_hsctx, sizeof(int));
                 if (s_id == INT_MAX)
                     s_id = 0;
                 int offset = 0;
@@ -113,20 +174,30 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
                 packet_t* pkt = calloc(1, sizeof(packet_t));
                 pkt->rawpacket = pkt_buf;
                 char rsv = 0;
-                uint32_t id_to_send = ntohl((uint32_t)(socks_hsctx->session_id));
-                uint16_t datalen_to_send = ntohs((uint16_t)nread);
+                uint32_t id_to_send = htonl((uint32_t)(socks_hsctx->session_id));
+                uint16_t datalen_to_send = htons((uint16_t)(ATYP_LEN + ADDRLEN_LEN + socks_hsctx->addrlen + PORT_LEN + nread));
                 pkt_maker(pkt_buf, &id_to_send, ID_LEN, offset);
                 pkt_maker(pkt_buf, &rsv, RSV_LEN, offset);
                 pkt_maker(pkt_buf, &datalen_to_send, DATALEN_LEN, offset);
                 pkt_maker(pkt_buf, &socks_hsctx->atyp, ATYP_LEN, offset);
+                LOGD("pkt_maker atyp %d", (char)*(pkt_buf + offset - 1));
                 pkt_maker(pkt_buf, &socks_hsctx->addrlen, ADDRLEN_LEN, offset);
                 pkt_maker(pkt_buf, &socks_hsctx->host, socks_hsctx->addrlen, offset);
                 pkt_maker(pkt_buf, &socks_hsctx->port, PORT_LEN, offset);
-                pkt_maker(pkt_buf, buf, nread, offset);
+                pkt_maker(pkt_buf, buf->base, nread, offset);
                 list_add_to_tail(send_queue, pkt);
+                //SHOW_BUFFER(pkt_buf, nread);
+                if (verbose) LOGD("now here is buf\n");
+                if (verbose) SHOW_BUFFER(buf->base, ID_LEN + RSV_LEN + DATALEN_LEN + ATYP_LEN \
+                 + ADDRLEN_LEN + socks_hsctx->addrlen + PORT_LEN + nread);  
+                write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
+                wr->buf = uv_buf_init(pkt_buf, ID_LEN + RSV_LEN + DATALEN_LEN + ATYP_LEN \
+                 + ADDRLEN_LEN + socks_hsctx->addrlen + PORT_LEN + nread);
+                uv_write(&wr->req, (uv_stream_t*)&remote_ctx_long->remote, &wr->buf, 1, write_cb);
+                // do not forget freeing buffers
             }
-            else {
-
+            else
+            {
                 int offset = 0;
                 char* pkt_buf = calloc(1, ID_LEN + RSV_LEN + DATALEN_LEN + nread);
                 packet_t* pkt = calloc(1, sizeof(packet_t));
@@ -137,24 +208,19 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
                 pkt_maker(pkt_buf, &id_to_send, ID_LEN, offset);
                 pkt_maker(pkt_buf, &rsv, RSV_LEN, offset);
                 pkt_maker(pkt_buf, &datalen_to_send, DATALEN_LEN, offset);
-                pkt_maker(pkt_buf, buf, nread, offset);
+                pkt_maker(pkt_buf, buf->base, nread, offset);
                 list_add_to_tail(send_queue, pkt);
-
-                // LOGD("stage = 2");
-                // printf("\n");
-                // SHOW_BUFFER(buf->base, nread);
-                // write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
-                // wr->buf = uv_buf_init((char*)buf->base, nread);
-                // uv_write(&wr->req, (uv_stream_t*)&remote_ctx_long->remote, &wr->buf, 1, write_cb);
-
-    
+                if (verbose) SHOW_BUFFER(pkt_buf, nread);
+                write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
+                wr->buf = uv_buf_init(pkt_buf, ID_LEN + RSV_LEN + DATALEN_LEN + nread);
+                uv_write(&wr->req, (uv_stream_t*)&remote_ctx_long->remote, &wr->buf, 1, write_cb);
+                // do not forget free buffers
             }
-
         }
 
-        if(socks_hsctx->stage == 0){
+        if (socks_hsctx->stage == 0){
             // received the first SOCKS5 request = in stage 0
-            LOGD("%ld bytes read\n", nread);
+            if (verbose)  LOGD("%ld bytes read\n", nread);
             total_read += nread;
             write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
             char socks_first_req[SOCKS5_FISRT_REQ_SIZE] = {0x05,0x01,0x00};
@@ -185,19 +251,16 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
                 uint16_t p = ntohs(*(uint16_t *)(socks_hsctx->port));
 
             } else if (req->atyp == 3){
-
-                printf("atyp == 3\n");
+                if (verbose) LOGD("atyp == 3\n");
                 socks_hsctx->atyp = 3;
                 socks_hsctx->addrlen = *(addr_ptr++);
-                memcpy(socks_hsctx->host, addr_ptr, socks_hsctx->addrlen);   // domain name copied
+                memcpy(socks_hsctx->host, addr_ptr, socks_hsctx->addrlen);      // domain name copied
                 addr_ptr += socks_hsctx->addrlen;
-                memcpy(socks_hsctx->port, addr_ptr, 2);          // port copied
-                uint16_t p = ntohs(*(uint16_t *)(socks_hsctx->port));    //conv to host order
-
+                memcpy(socks_hsctx->port, addr_ptr, 2);                         // port copied
+                uint16_t p = ntohs(*(uint16_t *)(socks_hsctx->port));           //conv to host order
             } else
                 LOGD("unexpected atyp");
 
-            //SHOW_BUFFER_IN_HEX(buf->base, nread);
             socks5_req_or_resp_t* resp = calloc(1, sizeof(socks5_req_or_resp_t));
             memcpy(resp, req, sizeof(socks5_req_or_resp_t) - 4);  // only copy the first 4 bytes to save time
             resp->cmd_or_resp = 0;
@@ -217,13 +280,8 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
 static void write_cb(uv_write_t *req, int status) {
     write_req_t* wr;
     wr = (write_req_t*) req;
-
-    int written = wr->buf.len;
     if (status) ERROR("async write", status);
     assert(wr->req.type == UV_WRITE);
-    fprintf(stderr, "%d bytes written\n", written);
-    total_written += written;
-
     /* Free the read/write buffer and the request */
     free(wr->buf.base);
     free(wr);
@@ -234,10 +292,12 @@ int main() {
     struct sockaddr_in connect_addr;
     send_queue = calloc(1, sizeof(queue_t));
     list_init(send_queue);
-
+    char* locallog = "local.log";
+    USE_LOGFILE(locallog);
     loop = uv_default_loop();
     server_ctx *socks_ctx = calloc(1, sizeof(server_ctx));
     remote_ctx_long = calloc(1, sizeof(remote_ctx_t));
+    remote_ctx_long->expect_to_recv = 7;
     uv_connect_t *req = (uv_connect_t *)malloc(sizeof(uv_connect_t));
     req->data = remote_ctx_long;
     remote_ctx_long->remote.data = remote_ctx_long;
@@ -256,5 +316,6 @@ int main() {
     	ERROR("bind error", r);
     
     uv_run(loop, UV_RUN_DEFAULT);
+    CLOSE_LOGFILE;
     return 0;
 }

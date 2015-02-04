@@ -1,9 +1,21 @@
 #ifndef LOCAL_H_
 #define LOCAL_H_
+#include "c_map.h"
 
 #define SOCKS5_FISRT_REQ_SIZE 3
 #define SOCKS5_FISRT_RESP_SIZE 2
 #define INT_MAX 2147483647
+#define BUF_SIZE 2048
+#define MAX_PKT_SIZE 81920
+#define ID_LEN 4
+#define PKT_LEN 2
+#define RSV_LEN 1
+#define DATALEN_LEN 2
+#define ATYP_LEN 1
+#define ADDRLEN_LEN  1
+#define PORT_LEN 2
+
+#define EXP_TO_RECV_LEN (ID_LEN + RSV_LEN + DATALEN_LEN)
 
 // built-in link list MACROs, modified from libcork
 #define list_init(list) \
@@ -42,13 +54,16 @@ do { \
     (elem)->prev->next = (elem)->next; \
     (elem)->next->prev = (elem)->prev; \
 } while (0)
+int compare_id (void* left, void* right) {
+    if (*(uint32_t*)left == *(uint32_t*)right)
+        return 0;
+    return *(uint32_t*)left < *(uint32_t*)right? -1:1;
+}
 
-//packet related operations
-#define pkt_maker(dest, src, len, offset) \
-do { \
-    memcpy(dest + offset, src, len); \
-    offset += len; \
-}  while(0)
+typedef struct {
+    uv_write_t req;
+    uv_buf_t buf;
+} write_req_t;
 
 typedef struct
 {
@@ -68,6 +83,12 @@ typedef struct send_queue{
 	packet_t head;
 } queue_t;
 
+typedef struct tmp_packet {
+    int session_id;
+    char rsv;
+    uint16_t datalen;
+    char * data;
+} tmp_packet_t;
 
 typedef struct
 {
@@ -75,7 +96,14 @@ typedef struct
 	int stage;
 	int run;
 	size_t buffer_len;
+    struct clib_map* idfd_map;  // for mapping session id with remote fd
 	server_ctx* listen;
+    char packet_buf[MAX_PKT_SIZE];
+    tmp_packet_t tmp_packet;
+    int buf_len;
+    int reset;
+    int offset;
+    int expect_to_recv;
 } remote_ctx_t;
 
 
@@ -88,13 +116,9 @@ typedef struct
 	int session_id;
 	char addrlen;
 	char host[256];	// to support ipv6
-	char port[16];	
+	char port[16];
+    char* response;
 } socks_handshake;
 
-typedef struct 
-{
-	uv_tcp_t pool;
-	int stage;
-} pool_ctx;
 
 #endif
