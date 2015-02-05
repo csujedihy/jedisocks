@@ -16,3 +16,6 @@ Jedisocks is based on libuv. So, before compile this project, make sure [libuv](
 3. Complete exception handling.
 4. IPv6 support.
 5. Add flexible plugin system to extend functionality.
+
+####Contact:
+csujedi at icloud dot com
