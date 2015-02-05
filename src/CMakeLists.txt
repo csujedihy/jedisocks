@@ -1,0 +1,7 @@
+SET(CMAKE_C_FLAGS "-std=gnu99")
+SET(LOCAL_SRC_LIST local.c c_map.c)
+SET(SERVER_SRC_LIST server.c c_map.c)
+ADD_EXECUTABLE(js-local ${LOCAL_SRC_LIST})
+ADD_EXECUTABLE(js-server ${SERVER_SRC_LIST})
+TARGET_LINK_LIBRARIES(js-local uv)
+TARGET_LINK_LIBRARIES(js-server uv)

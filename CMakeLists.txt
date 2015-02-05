@@ -1,0 +1,5 @@
+CMAKE_MINIMUM_REQUIRED(VERSION 2.7)
+PROJECT (jedisocks)
+ADD_SUBDIRECTORY(src bin)
+MESSAGE(STATUS "This is BINARY dir " ${jedisocks_BINARY_DIR})
+MESSAGE(STATUS "This is SOURCE dir " ${jedisocks_SOURCE_DIR})
