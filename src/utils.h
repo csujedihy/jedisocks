@@ -33,7 +33,15 @@ extern FILE * logfile;
                         ## __VA_ARGS__);    \
                 fflush(logfile);    \
             }   \
-        }   \
+            else { \
+                time_t now = time(NULL);    \
+                char timestr[20];   \
+                strftime(timestr, 20, TIME_FORMAT, localtime(&now));    \
+                fprintf(stderr, " %s INFO: " format "\n", timestr,  \
+                ## __VA_ARGS__);    \
+                fflush(stderr);    \
+            } \
+        } \
     while (0)
 
 #define LOGE(format, ...)                                                     \

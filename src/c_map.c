@@ -96,7 +96,7 @@ replace_raw_clib_object(struct clib_object* current_object,void* elem, size_t el
 void 
 delete_clib_object ( struct clib_object* inObject ) {
     if (inObject) {
-        free (inObject->raw_data);
+        //free (inObject->raw_data);
         free (inObject);
     }
 }
@@ -631,28 +631,34 @@ exists_c_map ( struct clib_map* pMap, void* key) {
     }
     return found;    
 }
+
 clib_error   
-remove_c_map ( struct clib_map* pMap, void* key) {
+remove_c_map ( struct clib_map* pMap, void* key, void **value) {
     clib_error rc = CLIB_ERROR_SUCCESS;
     struct clib_rb_node* node;
     if (pMap == (struct clib_map*)0)
         return CLIB_MAP_NOT_INITIALIZED;
 
     node = remove_c_rb ( pMap->root, key );
+    // node is now not in the map
     if ( node != (struct clib_rb_node*)0  ) {
-        void* removed_node;
-        get_raw_clib_object ( node->key, &removed_node );
-        free ( removed_node);
-        delete_clib_object ( node->key );
-
-        get_raw_clib_object ( node->value, &removed_node );
-        free ( removed_node);
-        delete_clib_object ( node->value);
-
+        // csujedihy: avoid free original element, only free node object
+        //get_raw_clib_object ( node->key, value );
+        //free ( removed_node);
+        //delete_clib_object ( node->key );
+        // if (node->key) {
+        //     free (node->key);
+        // }
+        // get_raw_clib_object ( node->value, value );
+        // //free ( removed_node);
+        // if (node->value) {
+        //     free (node->value);
+        // }
         free ( node );
     }
     return rc;
 }
+
 clib_bool    
 find_c_map ( struct clib_map* pMap, void* key, void**value) {
     struct clib_rb_node* node;

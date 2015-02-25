@@ -143,7 +143,7 @@ struct clib_map {
 extern struct clib_map* new_c_map    ( clib_compare fn_c_k, clib_destroy fn_k_d, clib_destroy fn_v_d);
 extern clib_error   insert_c_map ( struct clib_map* pMap, void* key, size_t key_size, void* value,  size_t value_size);
 extern clib_bool    exists_c_map ( struct clib_map* pMap, void* key);
-extern clib_error   remove_c_map ( struct clib_map* pMap, void* key);
+extern clib_error   remove_c_map ( struct clib_map* pMap, void* key, void**value);
 extern clib_bool    find_c_map   ( struct clib_map* pMap, void* key, void**value);
 extern clib_error   delete_c_map ( struct clib_map* pMap);
 

@@ -13,6 +13,7 @@
 #define PORT_LEN 2
 #define FULLPKT 1
 #define SMALLPKT 0
+#define CTL_CLOSE 0x04
 
 #define packet_payload_alloc(packet, flag) \
 do { \
@@ -150,6 +151,7 @@ typedef struct {
 //    char port[2];
 //    int session_id;
     int stage;
+    int closing;
 } remote_ctx_t;
 
 #endif
