@@ -4,10 +4,11 @@
 
 Jedisocks is a tunnel proxy with TCP connections multiplexing on a single TCP connection. This project is still under development.
 
-####Note
-Jedisocks is based on libuv. So, before compile this project, make sure [libuv](https://github.com/libuv/libuv) was successfully installed.
 
-####Installation: 
+
+####How to build:
+NOTE: Jedisocks is based on libuv. So, before compile this project, make sure [libuv](https://github.com/libuv/libuv) was successfully installed.
+ 
 	$ git clone [git address of this project]
 	$ cd build
 	$ cmake ..
