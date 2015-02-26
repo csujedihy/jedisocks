@@ -2,4 +2,4 @@ language: c
 compiler:
   - gcc
   - clang
-script: git clone https://github.com/libuv/libuv&&cd libuv&&sh autogen.sh&&./configure&&make&&make install&&cd ../build/&&cmake ..&&make
+script: git clone https://github.com/libuv/libuv&&cd libuv&&sh autogen.sh&&./configure&&make&&sudo make install&&cd ../build/&&cmake ..&&make
