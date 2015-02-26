@@ -2,5 +2,4 @@ language: c
 compiler:
   - gcc
   - clang
-before_script: sudo apt-get install libuv-dev
-script: cd build&&cmake ..&&make
+script: sudo apt-get install libuv-dev&&cd build&&cmake ..&&make
