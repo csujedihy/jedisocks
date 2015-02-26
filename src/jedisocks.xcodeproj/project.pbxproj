@@ -7,6 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C1451D721A9DA971008BDE72 /* js0n.c in Sources */ = {isa = PBXBuildFile; fileRef = C1451D701A9DA971008BDE72 /* js0n.c */; };
+		C1451D731A9DA971008BDE72 /* js0n.c in Sources */ = {isa = PBXBuildFile; fileRef = C1451D701A9DA971008BDE72 /* js0n.c */; };
+		C1451D761A9DBF6C008BDE72 /* jconf.c in Sources */ = {isa = PBXBuildFile; fileRef = C1451D751A9DBF6C008BDE72 /* jconf.c */; };
+		C1451D771A9DBF6C008BDE72 /* jconf.c in Sources */ = {isa = PBXBuildFile; fileRef = C1451D751A9DBF6C008BDE72 /* jconf.c */; };
+		C1451D791A9DDB6F008BDE72 /* utils.c in Sources */ = {isa = PBXBuildFile; fileRef = C1451D781A9DDB6F008BDE72 /* utils.c */; };
+		C1451D7A1A9DDB6F008BDE72 /* utils.c in Sources */ = {isa = PBXBuildFile; fileRef = C1451D781A9DDB6F008BDE72 /* utils.c */; };
 		C1EA7FCC1A9C7ED4009C01F6 /* libuv.1.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = C1EA7FCB1A9C7ED4009C01F6 /* libuv.1.dylib */; };
 		C1EA7FCD1A9C7EFB009C01F6 /* libuv.1.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = C1EA7FCB1A9C7ED4009C01F6 /* libuv.1.dylib */; };
 		C1EA7FCE1A9C7F02009C01F6 /* c_map.c in Sources */ = {isa = PBXBuildFile; fileRef = C1F153481A9C7CE9009779D2 /* c_map.c */; };
@@ -37,6 +43,11 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		C1451D701A9DA971008BDE72 /* js0n.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = js0n.c; sourceTree = SOURCE_ROOT; };
+		C1451D711A9DA971008BDE72 /* js0n.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = js0n.h; sourceTree = SOURCE_ROOT; };
+		C1451D741A9DBBBB008BDE72 /* jconf.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = jconf.h; sourceTree = SOURCE_ROOT; };
+		C1451D751A9DBF6C008BDE72 /* jconf.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = jconf.c; sourceTree = SOURCE_ROOT; };
+		C1451D781A9DDB6F008BDE72 /* utils.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = utils.c; sourceTree = SOURCE_ROOT; };
 		C1EA7FCB1A9C7ED4009C01F6 /* libuv.1.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libuv.1.dylib; path = ../../../../../../usr/local/lib/libuv.1.dylib; sourceTree = "<group>"; };
 		C1F153361A9C7C46009779D2 /* js-local */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "js-local"; sourceTree = BUILT_PRODUCTS_DIR; };
 		C1F153411A9C7C5B009779D2 /* js-server */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "js-server"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -92,12 +103,17 @@
 		C1F153371A9C7C46009779D2 /* js-local */ = {
 			isa = PBXGroup;
 			children = (
+				C1451D701A9DA971008BDE72 /* js0n.c */,
+				C1451D711A9DA971008BDE72 /* js0n.h */,
 				C1F153481A9C7CE9009779D2 /* c_map.c */,
 				C1F153491A9C7CE9009779D2 /* c_map.h */,
 				C1F1534A1A9C7CE9009779D2 /* local.c */,
 				C1F1534B1A9C7CE9009779D2 /* local.h */,
 				C1F1534C1A9C7CE9009779D2 /* socks5.h */,
 				C1F1534D1A9C7CE9009779D2 /* utils.h */,
+				C1451D741A9DBBBB008BDE72 /* jconf.h */,
+				C1451D751A9DBF6C008BDE72 /* jconf.c */,
+				C1451D781A9DDB6F008BDE72 /* utils.c */,
 			);
 			path = "js-local";
 			sourceTree = "<group>";
@@ -188,8 +204,11 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C1451D791A9DDB6F008BDE72 /* utils.c in Sources */,
+				C1451D761A9DBF6C008BDE72 /* jconf.c in Sources */,
 				C1F1534E1A9C7CE9009779D2 /* c_map.c in Sources */,
 				C1F1534F1A9C7CE9009779D2 /* local.c in Sources */,
+				C1451D721A9DA971008BDE72 /* js0n.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -197,8 +216,11 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C1451D7A1A9DDB6F008BDE72 /* utils.c in Sources */,
+				C1451D771A9DBF6C008BDE72 /* jconf.c in Sources */,
 				C1EA7FCE1A9C7F02009C01F6 /* c_map.c in Sources */,
 				C1F153521A9C7CF4009779D2 /* server.c in Sources */,
+				C1451D731A9DA971008BDE72 /* js0n.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

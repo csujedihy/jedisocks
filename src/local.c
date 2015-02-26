@@ -3,8 +3,11 @@
 #include <assert.h>
 #include <string.h>
 #include <uv.h>
-#include "utils.h"
+#include <unistd.h>
+#include <getopt.h>
+#include "jconf.h"
 #include "local.h"
+#include "utils.h"
 #include "socks5.h"
 #include "c_map.h"
 
@@ -376,7 +379,64 @@ static void write_cb(uv_write_t *req, int status) {
 }
 
 
-int main() {
+int main(int argc, char **argv) {
+    conf_t conf;
+    memset(&conf, '\0', sizeof(conf));
+#ifndef DEBUGX
+    int c, option_index = 0;
+    char* configfile = NULL;
+    opterr = 0;
+    static struct option long_options[] =
+    {
+        { 0, 0, 0, 0 }
+    };
+    
+    while ((c = getopt_long(argc, argv, "c:r:l:p:P:V",
+                            long_options, &option_index)) != -1) {
+        switch (c) {
+            case 'c':
+                configfile = optarg;
+                break;
+            case 'p':
+                conf.localport = atoi(optarg);
+                break;
+            case 'P':
+                conf.serverport = atoi(optarg);
+                break;
+            case 'r':
+                conf.local_address = optarg;
+                break;
+            case 'l':
+                conf.server_address = optarg;
+                break;
+            case 'V':
+                verbose = 1;
+                break;
+            default:
+                opterr = 1;
+                break;
+        }
+    }
+
+    if (configfile != NULL) {
+        read_conf(configfile, &conf);
+    }
+
+    if (opterr || argc == 1 || conf.serverport == NULL || conf.server_address == NULL || conf.localport == NULL || conf.local_address == NULL) {
+        printf("Error: 1)passed wrong or null args to the program.\n");
+        printf("       2)parse config file failed.\n");
+        usage();
+        exit(EXIT_FAILURE);
+    }
+    
+    //USE_LOGFILE(locallog);
+#else
+    conf.localport = 7001;
+    conf.serverport = 7000;
+    conf.server_address = "127.0.0.1";
+    conf.local_address = "0.0.0.0";
+#endif
+
     struct sockaddr_in bind_addr;
     struct sockaddr_in connect_addr;
     send_queue = calloc(1, sizeof(queue_t));
@@ -396,10 +456,10 @@ int main() {
     uv_tcp_init(loop, &socks_ctx->server);
     uv_tcp_init(loop, &remote_ctx_long->remote);
     
-    int r = uv_ip4_addr("127.0.0.1", 7001, &connect_addr);
+    int r = uv_ip4_addr(conf.server_address, conf.serverport, &connect_addr);
     r = uv_tcp_connect(req, &remote_ctx_long->remote, (struct sockaddr*)&connect_addr, connect_to_remote_cb);
-    r = uv_ip4_addr("0.0.0.0", 7000, &bind_addr);
-    LOGD("r = %d",r);
+    r = uv_ip4_addr(conf.local_address, conf.localport, &bind_addr);
+    LOGD("Ready to connect to remote server");
     r = uv_tcp_bind(&socks_ctx->server, (struct sockaddr*)&bind_addr, 0);
     if(r < 0)
     	ERROR("bind error", r);

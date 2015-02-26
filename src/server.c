@@ -3,10 +3,12 @@
 #include <assert.h>
 #include <string.h>
 #include <uv.h>
+#include <unistd.h>
+#include <getopt.h>
 #include "utils.h"
 #include "server.h"
 #include "c_map.h"
-
+#include "jconf.h"
 
 // TODO: 1) server_read_cb: handle the case when session_id is in the map
 //       2) add TCP timeout watchers to remote connections. if not data transmits in a long time, then close the connection
@@ -447,24 +449,81 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
 
 }
 
-int main()
+int main(int argc, char **argv)
 {
+    conf_t  conf;
+    memset(&conf, 0, sizeof(conf_t));
+#ifndef DEBUGX
+    int c, option_index = 0;
+    char* configfile = NULL;
+    opterr = 0;
+    static struct option long_options[] =
+    {
+        { 0, 0, 0, 0 }
+    };
+    
+    while ((c = getopt_long(argc, argv, "c:r:l:p:P:V",
+                            long_options, &option_index)) != -1) {
+        switch (c) {
+            case 'c':
+                configfile = optarg;
+                break;
+            case 'p':
+                conf.localport = atoi(optarg);
+                break;
+            case 'P':
+                conf.serverport = atoi(optarg);
+                break;
+            case 'r':
+                conf.local_address = optarg;
+                break;
+            case 'l':
+                conf.server_address = optarg;
+                break;
+            case 'V':
+                verbose = 1;
+                break;
+            default:
+                opterr = 1;
+                printf("default error\n");
+                break;
+        }
+    }
+    
+    if (configfile != NULL) {
+        read_conf(configfile, &conf);
+    }
+    printf("ra = %s\n", conf.server_address);
 
-    char* locallog = "/tmp/server.log";
-    //USE_LOGFILE(locallog);
+    if (opterr || argc == 1 || conf.serverport == NULL) {
+        printf("Error: 1)passed wrong or null args to the program.\n");
+        printf("       2)parse config file failed.\n");
+        usage();
+        exit(EXIT_FAILURE);
+    }
+    
+    
+    
+    //LOGD("la = %s ra = %s lp = %d rp = %d", conf.local_address, conf.server_address, conf.localport, conf.serverport);
+#else
+    conf.serverport = 7001;
+#endif
+    server_validate_conf(&conf);
+    char* serverlog = "/tmp/server.log";
+    //USE_LOGFILE(serverlog);
 	loop = uv_default_loop();
 	server_ctx_t* ctx = calloc(1, sizeof(server_ctx_t));
     ctx->expect_to_recv = EXP_TO_RECV_LEN;
 	ctx->listen.data = ctx;
 	uv_tcp_init(loop, &ctx->listen);
 	struct sockaddr_in bind_addr;
-	int r = uv_ip4_addr("0.0.0.0", 7001, &bind_addr);
+	int r = uv_ip4_addr(conf.server_address, conf.serverport, &bind_addr);
     // TODO: parse json
     r = uv_tcp_bind(&ctx->listen, (struct sockaddr*)&bind_addr, 0);
 	if (r < 0)	fprintf(stderr, "js-server: bind error", r);
 	r = uv_listen((uv_stream_t*)&ctx->listen, 128, accept_cb);
 	if (r)	ERROR("js-server: listen error", r);
-	fprintf(stderr, "js-server: listen on port 8888");
+	fprintf(stderr, "js-server: listen on %s:%d", conf.server_address, conf.serverport);
 	uv_run(loop, UV_RUN_DEFAULT);
     CLOSE_LOGFILE;
 }

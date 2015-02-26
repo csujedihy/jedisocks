@@ -1,6 +1,5 @@
 #ifndef _UTILS_H
 #define _UTILS_H
-#include <uv.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -43,6 +42,28 @@ extern FILE * logfile;
             } \
         } \
     while (0)
+
+#define FATAL(format, ...)   \
+do {    \
+    if (logfile != NULL) {  \
+        time_t now = time(NULL);    \
+        char timestr[20];   \
+        strftime(timestr, 20, TIME_FORMAT, localtime(&now));    \
+        fprintf(logfile, " %s INFO: " format "\n", timestr,  \
+        ## __VA_ARGS__);    \
+        fflush(logfile);    \
+    }   \
+    else { \
+        time_t now = time(NULL);    \
+        char timestr[20];   \
+        strftime(timestr, 20, TIME_FORMAT, localtime(&now));    \
+        fprintf(stderr, " %s INFO: " format "\n", timestr,  \
+        ## __VA_ARGS__);    \
+        fflush(stderr);    \
+    } \
+    exit(EXIT_FAILURE); \
+} \
+while (0)
 
 #define LOGE(format, ...)                                                     \
     do {                                                                      \
@@ -91,5 +112,7 @@ do { \
 pkt_access((dest), (src), (len), (offset)); \
 (ctx)->packet.session_id = ntohl((uint32_t)ctx->packet.session_id); \
 } while(0)
+
+void usage();
 
 #endif
