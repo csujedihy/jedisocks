@@ -8,6 +8,11 @@
 
 #ifndef jedisocks_jconf_h
 #define jedisocks_jconf_h
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <string.h>
+#include <strings.h>
 typedef struct {
     uint16_t localport;
     uint16_t serverport;

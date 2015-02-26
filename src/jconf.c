@@ -6,11 +6,6 @@
 //  Copyright (c) 2015年 jedihy. All rights reserved.
 //
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <strings.h>
-
 #include "js0n.h"
 #include "utils.h"
 #include "jconf.h"
