@@ -1,4 +1,6 @@
 ####Overview
+[![Build Status](https://travis-ci.org/csujedihy/jedisocks.svg?branch=master)](https://travis-ci.org/csujedihy/jedisocks)
+
 Jedisocks is a tunnel proxy with TCP connections multiplexing on a single TCP connection. This project is still under development.
 
 ####Note
