@@ -2,4 +2,4 @@ language: c
 compiler:
   - gcc
   - clang
-script: sudo apt-get install libuv-dev&&cd build&&cmake ..&&make
+script: git clone https://github.com/libuv/libuv&&cd libuv&&sh autogen.sh&&./configure&&make&&make install&&cd ../build/&&cmake ..&&make
