@@ -24,6 +24,15 @@ js-[local|server]
 -P <remote_port> Port number of your remote server
 -V Enable verbose log
 ```
+####Example of configuration file
+```
+{
+    "local_address":"127.0.0.1",
+    "server":"127.0.0.1",
+    "server_port":7001,
+    "local_port":7000
+}
+```
 ####Todo:
 1. ~~Read JSON file to load configuration.~~ (Accomplished)
 2. Add encryption to bypass GFW.
