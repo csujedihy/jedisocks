@@ -10,12 +10,27 @@ Jedisocks is based on libuv. So, before compile this project, make sure [libuv](
 	$ cmake ..
 	$ make
 
+####Usage
+```
+js-[local|server]
+-c <config_file> Path of configuration file that is written in JSON
+-r <server_host> Ip address of your remote server
+-l <local_host> Ip address of your local server
+-p <local_port> Port number of your local server
+-P <remote_port> Port number of your remote server
+-V Enable verbose log
+```
 ####Todo:
-1. Read JSON file to load configuration.
+1. ~~Read JSON file to load configuration.~~ (Accomplished)
 2. Add encryption to bypass GFW.
-3. Complete exception handling.
-4. IPv6 support.
-5. Add flexible plugin system to extend functionality.
+3. IPv6 support.
+4. Add flexible plugin system to extend functionality.
+
+####References
+This software is partly based on projects below.
+
+1. [Shadowsocks-libev](https://github.com/shadowsocks/shadowsocks-libev).
+2. [js0n](https://github.com/quartzjer/js0n).
 
 ####Contact:
 csujedi at icloud dot com
