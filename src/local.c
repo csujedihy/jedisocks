@@ -382,7 +382,7 @@ static void write_cb(uv_write_t *req, int status) {
 int main(int argc, char **argv) {
     conf_t conf;
     memset(&conf, '\0', sizeof(conf));
-#ifndef DEBUGX
+#ifndef DEBUG
     int c, option_index = 0;
     char* configfile = NULL;
     opterr = 0;
@@ -431,8 +431,8 @@ int main(int argc, char **argv) {
     
     //USE_LOGFILE(locallog);
 #else
-    conf.localport = 7001;
-    conf.serverport = 7000;
+    conf.localport = 7000;
+    conf.serverport = 7001;
     conf.server_address = "127.0.0.1";
     conf.local_address = "0.0.0.0";
 #endif

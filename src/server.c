@@ -33,6 +33,23 @@ static int try_to_close(uv_stream_t *stream);
 static void remote_addr_resolved(uv_getaddrinfo_t *resolver, int status, struct addrinfo *res);
 static void remote_on_connect(uv_connect_t* req, int status);
 static void server_write_cb(uv_write_t *req, int status);
+static void send_EOF_packet(remote_ctx_t* ctx);
+
+static void send_EOF_packet(remote_ctx_t* ctx){
+    int offset = 0;
+    char* pkt_buf = malloc(EXP_TO_RECV_LEN);
+    uint32_t session_id = htonl((uint32_t)ctx->session_id);
+    uint16_t datalen = 0;
+    pkt_maker(pkt_buf, &session_id, ID_LEN, offset);
+    //LOGD("session_id = %d session_idno = %d", ctx->session_id, session_id);
+    char rsv = 0x04;
+    pkt_maker(pkt_buf, &rsv, RSV_LEN, offset);
+    pkt_maker(pkt_buf, &datalen, DATALEN_LEN, offset);
+    write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
+    wr->req.data = ctx;
+    wr->buf = uv_buf_init(pkt_buf, EXP_TO_RECV_LEN);
+    uv_write(&wr->req, (uv_stream_t*)&ctx->server_ctx->server, &wr->buf, 1, server_write_cb);
+}
 
 
 static void remote_after_close_cb(uv_handle_t* handle) {
@@ -407,7 +424,7 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
                     pkt_to_send->data = malloc(ctx->packet.payloadlen);
                     pkt_access(pkt_to_send->data, ctx->packet_buf, ctx->packet.payloadlen, ctx->packet.offset);
                     //LOGD("(request)packet.data =\n%s", pkt_to_send->data);
-                    remote_ctx->host[remote_ctx->addrlen] = '\0'; // put end EOF on domain name
+                    remote_ctx->host[remote_ctx->addrlen] = '\0'; // put a EOF on domain name
                     remote_ctx->session_id = ctx->packet.session_id;
                     insert_c_map (ctx->idfd_map, &remote_ctx->session_id, sizeof(int), remote_ctx, sizeof(int));
                     list_add_to_tail(&remote_ctx->send_queue, pkt_to_send);
@@ -437,11 +454,9 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
                 assert(0);
                 LOGD("impossible! should never reach here (> datalen)\n");
             }
-        
-        
         }
         else
-            LOGD("strange stage\n");
+            LOGD("strange stage %d\n", ctx->stage);
        	free(buf->base);
 	}
 	if(nread == 0) free(buf->base);
@@ -453,7 +468,7 @@ int main(int argc, char **argv)
 {
     conf_t  conf;
     memset(&conf, 0, sizeof(conf_t));
-#ifndef DEBUGX
+#ifndef DEBUG
     int c, option_index = 0;
     char* configfile = NULL;
     opterr = 0;
@@ -501,8 +516,6 @@ int main(int argc, char **argv)
         usage();
         exit(EXIT_FAILURE);
     }
-    
-    
     
     //LOGD("la = %s ra = %s lp = %d rp = %d", conf.local_address, conf.server_address, conf.localport, conf.serverport);
 #else
