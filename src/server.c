@@ -56,6 +56,7 @@ static void remote_after_close_cb(uv_handle_t* handle) {
     remote_ctx_t* remote_ctx = (remote_ctx_t*)handle->data;
     if (remote_ctx != NULL) {
         remove_c_map(remote_ctx->server_ctx->idfd_map, &remote_ctx->session_id, NULL);
+        send_EOF_packet(remote_ctx);
         free(remote_ctx);
     }
     else
@@ -84,19 +85,6 @@ static void remote_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
         if (!uv_is_closing((uv_handle_t*)&ctx->remote)) {
                 // the remote is closing, we tell js-local to stop sending and preparing close
                 uv_read_stop((uv_stream_t *)&ctx->remote);
-                int offset = 0;
-                char* pkt_buf = malloc(EXP_TO_RECV_LEN);
-                uint32_t session_id = htonl((uint32_t)ctx->session_id);
-                uint16_t datalen = 0;
-                pkt_maker(pkt_buf, &session_id, ID_LEN, offset);
-                //LOGD("session_id = %d session_idno = %d", ctx->session_id, session_id);
-                char rsv = 0x04;
-                pkt_maker(pkt_buf, &rsv, RSV_LEN, offset);
-                pkt_maker(pkt_buf, &datalen, DATALEN_LEN, offset);
-                write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
-                wr->req.data = ctx;
-                wr->buf = uv_buf_init(pkt_buf, EXP_TO_RECV_LEN);
-                uv_write(&wr->req, (uv_stream_t*)&ctx->server_ctx->server, &wr->buf, 1, server_write_cb);
 
                 // shutdown remote
                 uv_shutdown_t *req = malloc(sizeof(uv_shutdown_t));
@@ -133,7 +121,6 @@ static void remote_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
 
 static void server_write_cb(uv_write_t *req, int status) {
     write_req_t* wr = (write_req_t*)req;
-    remote_ctx_t* ctx = wr->req.data;
     if (status) {
         LOGD("error in server_write_cb");
     }
@@ -161,27 +148,13 @@ static void remote_write_cb(uv_write_t *req, int status) {
                 // the remote is closing, we tell js-local to stop sending and preparing close
                 uv_read_stop((uv_stream_t *)&ctx->remote);
                 ctx->closing = 1;
-                int offset = 0;
-                char* pkt_buf = malloc(EXP_TO_RECV_LEN);
-                uint32_t session_id = htonl((uint32_t)ctx->session_id);
-                uint16_t datalen = 0;
-                pkt_maker(pkt_buf, &session_id, ID_LEN, offset);
-                //LOGD("session_id = %d session_idno = %d", ctx->session_id, session_id);
-                char rsv = 0x04;
-                pkt_maker(pkt_buf, &rsv, RSV_LEN, offset);
-                pkt_maker(pkt_buf, &datalen, DATALEN_LEN, offset);
-                write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
-                wr->req.data = ctx;
-                wr->buf = uv_buf_init(pkt_buf, EXP_TO_RECV_LEN);
-                uv_write(&wr->req, (uv_stream_t*)&ctx->server_ctx->server, &wr->buf, 1, server_write_cb);
-
+                
                 // shutdown remote
                 uv_shutdown_t *req = malloc(sizeof(uv_shutdown_t));
                 req->data = ctx;
                 uv_shutdown(req, (uv_stream_t*)&ctx->remote, remote_after_shutdown_cb);
             }
         }
-        //free(wr->packet);
 
         free(wr);
         LOGD("remote write failed!");
