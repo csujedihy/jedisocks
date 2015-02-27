@@ -94,7 +94,7 @@ static void remote_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
         //now handle remote close
         // for debug
     } else if (nread > 0) {
-//        LOGD("remote_read_cb.buf = %s\n", buf->base);
+//      LOGD("remote_read_cb.buf = %s\n", buf->base);
         server_ctx_t* server_ctx = ctx->server_ctx;
         int offset = 0;
         char* pkt_buf = calloc(1, ID_LEN + RSV_LEN + DATALEN_LEN + nread);
@@ -117,6 +117,7 @@ static void remote_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
         uv_write(&req->req, (uv_stream_t*)&ctx->server_ctx->server, &req->buf, 1, server_write_cb);
         free(buf->base);
     }
+    if (nread == 0) free(buf->base);
 }
 
 static void server_write_cb(uv_write_t *req, int status) {
@@ -156,6 +157,7 @@ static void remote_write_cb(uv_write_t *req, int status) {
             }
         }
 
+        free(wr->buf.base);
         free(wr);
         LOGD("remote write failed!");
         return;
@@ -177,9 +179,7 @@ static void remote_write_cb(uv_write_t *req, int status) {
         if (verbose)
             LOGD("got nothing to send");
     }
-    
-    //free(wr->packet);
-    // free base
+    free(wr->buf.base);
     free(wr);
 }
 
@@ -272,7 +272,7 @@ static void accept_cb(uv_stream_t *server, int status) {
 
 static void server_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t *buf) {
     server_ctx_t* server_ctx = (server_ctx_t*)handle->data;
-    *buf = uv_buf_init((char*) malloc(server_ctx->expect_to_recv), server_ctx->expect_to_recv);
+    *buf = uv_buf_init(server_ctx->recv_buffer, server_ctx->expect_to_recv);
     assert(buf->base != NULL);
 }
 
@@ -379,7 +379,6 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
                     if (ctx->packet.rsv == 0x00)
                     {
                         LOGD("385 return");
-                        free(buf->base);
                         return;
                     }
                     remote_ctx_t* remote_ctx = calloc(1, sizeof(remote_ctx_t));
@@ -430,9 +429,7 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
         }
         else
             LOGD("strange stage %d\n", ctx->stage);
-       	free(buf->base);
 	}
-	if(nread == 0) free(buf->base);
     LOGD("server_read_cb: ==============================end==============================\n");
 
 }

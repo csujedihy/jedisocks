@@ -128,6 +128,7 @@ typedef struct {
     packet_t packet;
     queue_t send_queue;
     char packet_buf[MAX_PKT_SIZE];
+    char recv_buffer[MAX_PKT_SIZE];
     int buf_len;
     int reset;
 	int stage;
