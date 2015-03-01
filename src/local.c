@@ -53,9 +53,13 @@ static void socks_after_close_cb(uv_handle_t* handle) {
     LOGD("socks_after_close_cb");
     socks_handshake *socks_hsctx = (socks_handshake *)handle->data;
     if (socks_hsctx != NULL) {
-        remove_c_map(remote_ctx_long->idfd_map, &socks_hsctx->session_id, NULL);
         send_EOF_packet(socks_hsctx, remote_ctx_long);
-        free(socks_hsctx);
+        socks_hsctx->closed++;
+        if (socks_hsctx == 2) {
+            LOGD("session %d is removed from session map and ctx is freed", socks_hsctx->session_id);
+            remove_c_map(remote_ctx_long->idfd_map, &socks_hsctx->session_id, NULL);
+            free(socks_hsctx);
+        }
     }
     else
         LOGD("socks_after_close_cb: socks_hsctx == NULL?");
@@ -134,6 +138,15 @@ static void remote_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *b
                     socks_handshake* exist_ctx = NULL;
                     if (find_c_map(ctx->idfd_map, &ctx->tmp_packet.session_id, &exist_ctx))
                     {
+                        exist_ctx->closed++;
+                        if (exist_ctx->closed == 2) {
+                            // client passively removes and frees session
+                            LOGD("session %d is removed from session map and ctx is freed", exist_ctx->session_id);
+                            remove_c_map(remote_ctx_long->idfd_map, &exist_ctx->session_id, NULL);
+                            free(exist_ctx);
+                            // add session id to idle session id list
+                        }
+                        
                         // remote is closing, so shutdown SOCKS5 socket
                         if (!uv_is_closing((uv_handle_t*)&exist_ctx->server)) {
                             uv_read_stop((uv_stream_t *)&exist_ctx->server);

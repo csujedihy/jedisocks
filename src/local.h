@@ -116,6 +116,7 @@ typedef struct
 	int init;
 	int session_id;
 	int closing;
+    int closed;
 	char addrlen;
 	char host[256];	// to support ipv6
 	char port[16];
