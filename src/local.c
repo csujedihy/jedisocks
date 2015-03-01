@@ -57,6 +57,7 @@ static void socks_after_close_cb(uv_handle_t* handle) {
         socks_hsctx->closed++;
         if (socks_hsctx == 2) {
             LOGD("session %d is removed from session map and ctx is freed", socks_hsctx->session_id);
+            // add a comment
             remove_c_map(remote_ctx_long->idfd_map, &socks_hsctx->session_id, NULL);
             free(socks_hsctx);
         }
