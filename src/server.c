@@ -39,9 +39,9 @@ static void send_EOF_packet(remote_ctx_t* ctx){
     char* pkt_buf = malloc(EXP_TO_RECV_LEN);
     uint32_t session_id = htonl((uint32_t)ctx->session_id);
     uint16_t datalen = 0;
+    char rsv = 0x04;
     pkt_maker(pkt_buf, &session_id, ID_LEN, offset);
     //LOGD("session_id = %d session_idno = %d", ctx->session_id, session_id);
-    char rsv = 0x04;
     pkt_maker(pkt_buf, &rsv, RSV_LEN, offset);
     pkt_maker(pkt_buf, &datalen, DATALEN_LEN, offset);
     write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
@@ -85,13 +85,13 @@ static void remote_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
         //uv_close((uv_handle_t*) stream, NULL);
         ctx->connected = 0;
         if (!uv_is_closing((uv_handle_t*)&ctx->remote)) {
-                // the remote is closing, we tell js-local to stop sending and preparing close
-                uv_read_stop((uv_stream_t *)&ctx->remote);
+            // the remote is closing, we tell js-local to stop sending and preparing close
+            uv_read_stop((uv_stream_t *)&ctx->remote);
 
-                // shutdown remote
-                uv_shutdown_t *req = malloc(sizeof(uv_shutdown_t));
-                req->data = ctx;
-                uv_shutdown(req, (uv_stream_t*)&ctx->remote, remote_after_shutdown_cb);
+            // shutdown remote
+            uv_shutdown_t *req = malloc(sizeof(uv_shutdown_t));
+            req->data = ctx;
+            uv_shutdown(req, (uv_stream_t*)&ctx->remote, remote_after_shutdown_cb);
         }
         //now handle remote close
         // for debug
@@ -132,10 +132,7 @@ static void server_write_cb(uv_write_t *req, int status) {
     if (wr->buf.base != NULL) {
         free(wr->buf.base);
     }
-    
-    if (verbose) LOGD("called once!");
-//    if (wr->packet)
-//        free(wr->packet);
+
     free(wr);
 }
 

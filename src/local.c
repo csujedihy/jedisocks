@@ -16,10 +16,10 @@ static void socks_handshake_read_cb(uv_stream_t *stream, ssize_t nread, const uv
 static void socks_write_cb(uv_write_t* req, int status);
 static void remote_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t *buf);
 static void remote_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf);
-static void write_cb(uv_write_t *req, int status);
+static void remote_write_cb(uv_write_t *req, int status);
 static void socks_after_shutdown_cb(uv_shutdown_t* req, int status);
 static void socks_after_close_cb(uv_handle_t* handle);
-
+static void send_EOF_packet(socks_handshake* socks_hsctx, remote_ctx_t* remote_ctx);
 static void connect_to_remote_cb(uv_connect_t* req, int status);
 static void accept_cb(uv_stream_t *server, int status);
 int verbose = 0;
@@ -32,11 +32,29 @@ FILE * logfile = NULL;
 remote_ctx_t *remote_ctx_long;
 queue_t* send_queue;
 
+static void send_EOF_packet(socks_handshake* socks_hsctx, remote_ctx_t* remote_ctx) {
+    int offset = 0;
+    char* pkt_buf = malloc(EXP_TO_RECV_LEN);
+    uint32_t session_id = htonl((uint32_t)socks_hsctx->session_id);
+    uint16_t datalen = 0;
+    char rsv = 0x04;
+    pkt_maker(pkt_buf, &session_id, ID_LEN, offset);
+    //LOGD("session_id = %d session_idno = %d", ctx->session_id, session_id);
+    pkt_maker(pkt_buf, &rsv, RSV_LEN, offset);
+    pkt_maker(pkt_buf, &datalen, DATALEN_LEN, offset);
+    write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
+    wr->req.data = socks_hsctx;
+    wr->buf = uv_buf_init(pkt_buf, EXP_TO_RECV_LEN);
+    uv_write(&wr->req, (uv_stream_t*)&remote_ctx->remote, &wr->buf, 1, socks_write_cb);
+
+}
+
 static void socks_after_close_cb(uv_handle_t* handle) {
     LOGD("socks_after_close_cb");
     socks_handshake *socks_hsctx = (socks_handshake *)handle->data;
     if (socks_hsctx != NULL) {
         remove_c_map(remote_ctx_long->idfd_map, &socks_hsctx->session_id, NULL);
+        send_EOF_packet(socks_hsctx, remote_ctx_long);
         free(socks_hsctx);
     }
     else
@@ -55,26 +73,13 @@ static void socks_write_cb(uv_write_t* req, int status) {
     socks_handshake* socks_hsctx = (socks_handshake*)req->data;
     if (status) {
         if (!uv_is_closing((uv_handle_t*)&socks_hsctx->server)) {
-                // the remote is closing, we tell js-local to stop sending and preparing close
-                uv_read_stop((uv_stream_t *)&socks_hsctx->server);
-                int offset = 0;
-                char* pkt_buf = malloc(EXP_TO_RECV_LEN);
-                uint32_t session_id = htonl((uint32_t)socks_hsctx->session_id);
-                uint16_t datalen = 0;
-                pkt_maker(pkt_buf, &session_id, ID_LEN, offset);
-                //LOGD("session_id = %d session_idno = %d", ctx->session_id, session_id);
-                char rsv = 0x04;
-                pkt_maker(pkt_buf, &rsv, RSV_LEN, offset);
-                pkt_maker(pkt_buf, &datalen, DATALEN_LEN, offset);
-                write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
-                wr->req.data = socks_hsctx;
-                wr->buf = uv_buf_init(pkt_buf, EXP_TO_RECV_LEN);
-                uv_write(&wr->req, (uv_stream_t*)&remote_ctx_long->remote, &wr->buf, 1, socks_write_cb);
+            // the remote is closing, we tell js-local to stop sending and preparing close
+            uv_read_stop((uv_stream_t *)&socks_hsctx->server);
 
-                // shutdown remote
-                uv_shutdown_t *req = malloc(sizeof(uv_shutdown_t));
-                req->data = socks_hsctx;
-                uv_shutdown(req, (uv_stream_t*)&socks_hsctx->server, socks_after_shutdown_cb);
+            // shutdown remote
+            uv_shutdown_t *req = malloc(sizeof(uv_shutdown_t));
+            req->data = socks_hsctx;
+            uv_shutdown(req, (uv_stream_t*)&socks_hsctx->server, socks_after_shutdown_cb);
         }    
         LOGD("socks write error: maybe client is closing");
     }
@@ -125,7 +130,7 @@ static void remote_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *b
                 if (ctx->tmp_packet.rsv == 0x04) {
                     ctx->reset = 0;
                     ctx->expect_to_recv = EXP_TO_RECV_LEN;
-                    LOGD("received a 0x04 packet");
+                    LOGD("received a 0x04 packet -- session in js-server is closed");
                     socks_handshake* exist_ctx = NULL;
                     if (find_c_map(ctx->idfd_map, &ctx->tmp_packet.session_id, &exist_ctx))
                     {
@@ -159,7 +164,7 @@ static void remote_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *b
                     wr->req.data = socks;
                     wr->buf = uv_buf_init(socks->response, ctx->tmp_packet.datalen);
                     uv_write(&wr->req, (uv_stream_t*)&socks->server, &wr->buf, 1, socks_write_cb);
-                   // LOGD("response\n");
+                    // LOGD("response\n");
                     
                 }
                 else {
@@ -193,7 +198,6 @@ static void connect_to_remote_cb(uv_connect_t* req, int status) {
     int r = uv_listen((uv_stream_t*) &remote_ctx_long->listen->server, 128 /*backlog*/, accept_cb);
     if (r) ERROR("listen error", r)
     fprintf(stderr, "Listening on localhost:7000\n");
-
 }   
 
 static void accept_cb(uv_stream_t *server, int status) {
@@ -224,19 +228,6 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
         if (!uv_is_closing((uv_handle_t*)&socks_hsctx->server)) {
                 // the remote is closing, we tell js-local to stop sending and preparing close
                 uv_read_stop((uv_stream_t *)&socks_hsctx->server);
-                int offset = 0;
-                char* pkt_buf = malloc(EXP_TO_RECV_LEN);
-                uint32_t session_id = htonl((uint32_t)socks_hsctx->session_id);
-                uint16_t datalen = 0;
-                pkt_maker(pkt_buf, &session_id, ID_LEN, offset);
-                //LOGD("session_id = %d session_idno = %d", ctx->session_id, session_id);
-                char rsv = 0x04;
-                pkt_maker(pkt_buf, &rsv, RSV_LEN, offset);
-                pkt_maker(pkt_buf, &datalen, DATALEN_LEN, offset);
-                write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
-                wr->req.data = socks_hsctx;
-                wr->buf = uv_buf_init(pkt_buf, EXP_TO_RECV_LEN);
-                uv_write(&wr->req, (uv_stream_t*)&remote_ctx_long->remote, &wr->buf, 1, socks_write_cb);
 
                 // shutdown remote
                 uv_shutdown_t *req = malloc(sizeof(uv_shutdown_t));
@@ -279,7 +270,7 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
                 write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
                 wr->buf = uv_buf_init(pkt_buf, ID_LEN + RSV_LEN + DATALEN_LEN + ATYP_LEN \
                  + ADDRLEN_LEN + socks_hsctx->addrlen + PORT_LEN + nread);
-                uv_write(&wr->req, (uv_stream_t*)&remote_ctx_long->remote, &wr->buf, 1, write_cb);
+                uv_write(&wr->req, (uv_stream_t*)&remote_ctx_long->remote, &wr->buf, 1, remote_write_cb);
                 // do not forget freeing buffers
             }
             else
@@ -305,7 +296,7 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
                 write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
                 wr->req.data = socks_hsctx;
                 wr->buf = uv_buf_init(pkt_buf, ID_LEN + RSV_LEN + DATALEN_LEN + nread);
-                uv_write(&wr->req, (uv_stream_t*)&remote_ctx_long->remote, &wr->buf, 1, write_cb);
+                uv_write(&wr->req, (uv_stream_t*)&remote_ctx_long->remote, &wr->buf, 1, remote_write_cb);
                 // do not forget free buffers
             }
         }
@@ -323,7 +314,7 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
             if (r == 0)
                 LOGD("Received a socks5 request");
             wr->buf =  uv_buf_init((char*)socks_first_resp, sizeof(method_select_response_t));
-            uv_write(&wr->req, client, &wr->buf, 1 /*nbufs*/, write_cb);
+            uv_write(&wr->req, client, &wr->buf, 1 /*nbufs*/, remote_write_cb);
             socks_hsctx->stage = 1;
             // sent the 1st response -> switch to the stage 1
 
@@ -359,7 +350,7 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
             resp->atyp = 1;
             write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
             wr->buf = uv_buf_init((char*)resp, sizeof(socks5_req_or_resp_t));
-            uv_write(&wr->req, client, &wr->buf, 1, write_cb);
+            uv_write(&wr->req, client, &wr->buf, 1, remote_write_cb);
             socks_hsctx->stage = 2;
         }
         free(buf->base);
@@ -368,7 +359,7 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
     if (nread == 0) free(buf->base);
 }
 
-static void write_cb(uv_write_t *req, int status) {
+static void remote_write_cb(uv_write_t *req, int status) {
     write_req_t* wr = (write_req_t*) req;
     if (status) ERROR("async write", status);
     assert(wr->req.type == UV_WRITE);
