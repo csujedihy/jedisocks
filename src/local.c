@@ -328,7 +328,7 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
             if (r == 0)
                 LOGD("Received a socks5 request");
             wr->buf =  uv_buf_init((char*)socks_first_resp, sizeof(method_select_response_t));
-            uv_write(&wr->req, client, &wr->buf, 1 /*nbufs*/, remote_write_cb);
+            uv_write(&wr->req, client, &wr->buf, 1 /*nbufs*/, socks_write_cb);
             socks_hsctx->stage = 1;
             // sent the 1st response -> switch to the stage 1
 
@@ -364,7 +364,7 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
             resp->atyp = 1;
             write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
             wr->buf = uv_buf_init((char*)resp, sizeof(socks5_req_or_resp_t));
-            uv_write(&wr->req, client, &wr->buf, 1, remote_write_cb);
+            uv_write(&wr->req, client, &wr->buf, 1, socks_write_cb);
             socks_hsctx->stage = 2;
         }
         free(buf->base);
