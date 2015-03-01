@@ -646,14 +646,14 @@ remove_c_map ( struct clib_map* pMap, void* key, void **value) {
         //get_raw_clib_object ( node->key, value );
         //free ( removed_node);
         //delete_clib_object ( node->key );
-        // if (node->key) {
-        //     free (node->key);
-        // }
+         if (node->key) {
+             free (node->key);
+         }
         // get_raw_clib_object ( node->value, value );
         // //free ( removed_node);
-        // if (node->value) {
-        //     free (node->value);
-        // }
+         if (node->value) {
+             free (node->value);
+         }
         free ( node );
     }
     return rc;

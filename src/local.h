@@ -99,6 +99,7 @@ typedef struct
     struct clib_map* idfd_map;  // for mapping session id with remote fd
 	server_ctx* listen;
     char packet_buf[MAX_PKT_SIZE];
+    char recv_buffer[MAX_PKT_SIZE];
     tmp_packet_t tmp_packet;
     int buf_len;
     int reset;

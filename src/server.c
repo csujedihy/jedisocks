@@ -24,7 +24,6 @@ static void remote_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t *buf);
 static void remote_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf);
 static void server_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t *buf);
 static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf);
-static void write_cb(uv_write_t *req, int status);
 static void remote_write_cb(uv_write_t *req, int status);
 static void remote_close(uv_handle_t *handle);
 static void remote_after_shutdown_cb(uv_shutdown_t* req, int status);
@@ -57,10 +56,13 @@ static void remote_after_close_cb(uv_handle_t* handle) {
     if (remote_ctx != NULL) {
         remove_c_map(remote_ctx->server_ctx->idfd_map, &remote_ctx->session_id, NULL);
         send_EOF_packet(remote_ctx);
+        packet_t* packet_to_free = NULL;
+        while ((packet_to_free = list_get_head_elem(&remote_ctx->send_queue))) {
+            list_remove_elem(packet_to_free);
+            free(packet_to_free);
+        }
         free(remote_ctx);
     }
-    else
-        LOGD("remote_after_close_cb: remote_ctx == NULL?");
 }
 
 static void remote_after_shutdown_cb(uv_shutdown_t* req, int status) {
@@ -164,7 +166,6 @@ static void remote_write_cb(uv_write_t *req, int status) {
     }
     assert(wr->req.type == UV_WRITE);
     //LOGD("send in remote_write_cb data = \n%s\n", wr->buf.base);
-    
     packet_t* packet = list_get_head_elem(&ctx->send_queue);
     if (packet) {
         write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
@@ -179,6 +180,7 @@ static void remote_write_cb(uv_write_t *req, int status) {
         if (verbose)
             LOGD("got nothing to send");
     }
+    
     free(wr->buf.base);
     free(wr);
 }
@@ -210,6 +212,7 @@ static void remote_on_connect(uv_connect_t* req, int status) {
     else{
         if (verbose) LOGD("got nothing to send");
     }
+    free(req); //2.28 added
 }
 
 static int try_to_connect_remote(remote_ctx_t* ctx) {
@@ -254,7 +257,7 @@ static void remote_addr_resolved(uv_getaddrinfo_t *resolver, int status, struct 
     free(resolver);
 }
 
-static void accept_cb(uv_stream_t *server, int status) {
+static void server_accept_cb(uv_stream_t *server, int status) {
 	if (status) ERROR("async connect", status);
 	server_ctx_t* ctx = server->data;
     ctx->server.data = ctx;
@@ -493,7 +496,7 @@ int main(int argc, char **argv)
 #endif
     server_validate_conf(&conf);
     char* serverlog = "/tmp/server.log";
-    //USE_LOGFILE(serverlog);
+    USE_LOGFILE(serverlog);
 	loop = uv_default_loop();
 	server_ctx_t* ctx = calloc(1, sizeof(server_ctx_t));
     ctx->expect_to_recv = EXP_TO_RECV_LEN;
@@ -504,7 +507,7 @@ int main(int argc, char **argv)
     // TODO: parse json
     r = uv_tcp_bind(&ctx->listen, (struct sockaddr*)&bind_addr, 0);
 	if (r < 0)	fprintf(stderr, "js-server: bind error", r);
-	r = uv_listen((uv_stream_t*)&ctx->listen, 128, accept_cb);
+	r = uv_listen((uv_stream_t*)&ctx->listen, 128, server_accept_cb);
 	if (r)	ERROR("js-server: listen error", r);
 	fprintf(stderr, "js-server: listen on %s:%d", conf.server_address, conf.serverport);
 	uv_run(loop, UV_RUN_DEFAULT);

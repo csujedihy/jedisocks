@@ -84,7 +84,8 @@ static void socks_write_cb(uv_write_t* req, int status) {
 }
 
 static void remote_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t *buf) {
-    *buf = uv_buf_init((char*) malloc(remote_ctx_long->expect_to_recv), remote_ctx_long->expect_to_recv);
+    remote_ctx_t* ctx = (remote_ctx_t*)handle->data;
+    *buf = uv_buf_init(ctx->recv_buffer, ctx->expect_to_recv);
     assert(buf->base != NULL);
 }
 
@@ -174,10 +175,9 @@ static void remote_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *b
                 LOGD("impossible! should never reach here (> datalen)\n");
             }
         }
-        free(buf->base);
     }
 }
-// Init long connection to your server
+// Init a long connection to your server
 static void connect_to_remote_cb(uv_connect_t* req, int status) {
     remote_ctx_t* ctx = (remote_ctx_t *)req->data;
     if (status) {
@@ -244,7 +244,7 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
                 uv_shutdown(req, (uv_stream_t*)&socks_hsctx->server, socks_after_shutdown_cb);
         }        
         // for debug
-        fprintf(stderr, "closed client connection\n");
+        LOGD("A socks5 connection is closed\n");
     } else if (nread > 0) {
         socks_handshake *socks_hsctx = client->data;
         if (socks_hsctx->stage == 2) {
@@ -326,7 +326,7 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
             uv_write(&wr->req, client, &wr->buf, 1 /*nbufs*/, write_cb);
             socks_hsctx->stage = 1;
             // sent the 1st response -> switch to the stage 1
-            free(buf->base);
+
         } else if (socks_hsctx->stage == 1){
             // received 2nd request in stage 1
             // here we have to parse the requested domain or ip address, then we store it in hsctx
@@ -361,11 +361,10 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
             wr->buf = uv_buf_init((char*)resp, sizeof(socks5_req_or_resp_t));
             uv_write(&wr->req, client, &wr->buf, 1, write_cb);
             socks_hsctx->stage = 2;
-            free(buf->base);
-
         }
-
+        free(buf->base);
     }
+    
     if (nread == 0) free(buf->base);
 }
 
@@ -442,7 +441,7 @@ int main(int argc, char **argv) {
     send_queue = calloc(1, sizeof(queue_t));
     list_init(send_queue);
     char* locallog = "/tmp/local.log";
-    //USE_LOGFILE(locallog);
+    USE_LOGFILE(locallog);
     loop = uv_default_loop();
     server_ctx *socks_ctx = calloc(1, sizeof(server_ctx));
     remote_ctx_long = calloc(1, sizeof(remote_ctx_t));
