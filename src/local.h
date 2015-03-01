@@ -54,6 +54,7 @@ do { \
     (elem)->prev->next = (elem)->next; \
     (elem)->next->prev = (elem)->prev; \
 } while (0)
+
 int compare_id (void* left, void* right) {
     if (*(uint32_t*)left == *(uint32_t*)right)
         return 0;

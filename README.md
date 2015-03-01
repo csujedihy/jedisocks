@@ -38,6 +38,7 @@ js-[local|server]
 2. Add encryption to bypass GFW.
 3. IPv6 support.
 4. Add flexible plugin system to extend functionality.
+5. Add re-connect mechanism to long multiplexing connection.
 
 ####References
 This software is partly based on projects below.
