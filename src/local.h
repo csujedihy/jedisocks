@@ -105,6 +105,7 @@ typedef struct
     int reset;
     int offset;
     int expect_to_recv;
+    uint32_t sid;
 } remote_ctx_t;
 
 
