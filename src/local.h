@@ -91,6 +91,27 @@ typedef struct tmp_packet {
     char * data;
 } tmp_packet_t;
 
+typedef struct socks_handshake
+{
+    uv_tcp_t server;
+    int stage;
+    char atyp;
+    int init;
+    int session_id;
+    int closing;
+    int closed;
+    char addrlen;
+    char host[256];	// to support ipv6
+    char port[16];
+    char* response;
+    struct socks_handshake* prev;
+    struct socks_handshake* next;
+} socks_handshake_t;
+
+typedef struct socks_connection_list{
+    socks_handshake_t head;
+} socks_connection_list_t;
+
 typedef struct
 {
 	uv_tcp_t remote;
@@ -107,23 +128,10 @@ typedef struct
     int offset;
     int expect_to_recv;
     uint32_t sid;
+    socks_handshake_t managed_socks_list; // SOCKS5 connections managed by this remote_ctx
 } remote_ctx_t;
 
 
-typedef struct 
-{
-	uv_tcp_t server;
-	int stage;
-	char atyp;
-	int init;
-	int session_id;
-	int closing;
-    int closed;
-	char addrlen;
-	char host[256];	// to support ipv6
-	char port[16];
-    char* response;
-} socks_handshake;
 
 
 #endif

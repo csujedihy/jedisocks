@@ -506,7 +506,7 @@ int main(int argc, char **argv)
 	if (r < 0)	fprintf(stderr, "js-server: bind error", r);
 	r = uv_listen((uv_stream_t*)&ctx->listen, 128, server_accept_cb);
 	if (r)	ERROR("js-server: listen error", r);
-	fprintf(stderr, "js-server: listen on %s:%d", conf.server_address, conf.serverport);
+	fprintf(stderr, "js-server: listen on %s:%d\n", conf.server_address, conf.serverport);
 	uv_run(loop, UV_RUN_DEFAULT);
     CLOSE_LOGFILE;
 }

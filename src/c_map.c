@@ -426,6 +426,8 @@ remove_c_rb (struct clib_rb* pTree, void* key) {
         return (struct clib_rb_node*)0 ;
     return __remove_c_rb(pTree, z );
 }
+
+// modified c_map.c delete map operations. Note: destruct_v_fn is unused.
 static void
 __delete_c_rb_node (struct clib_rb* pTree, struct clib_rb_node* x ) {
 
