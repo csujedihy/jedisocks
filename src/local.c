@@ -21,14 +21,14 @@ static void socks_after_shutdown_cb(uv_shutdown_t* req, int status);
 static void socks_after_close_cb(uv_handle_t* handle);
 static void send_EOF_packet(socks_handshake_t* socks_hsctx, remote_ctx_t* remote_ctx);
 static void connect_to_remote_cb(uv_connect_t* req, int status);
-static void accept_cb(uv_stream_t *server, int status);
+static void socks_accept_cb(uv_stream_t *server, int status);
 static void remote_after_close_cb(uv_handle_t* handle);
 
 int verbose = 0;
 int total_read;
 int total_written;
 int s_id = 0;
-
+conf_t conf;
 uv_loop_t *loop;
 FILE * logfile = NULL;
 // remote in local means the connection between client and server
@@ -223,14 +223,11 @@ static void connect_to_remote_cb(uv_connect_t* req, int status) {
     ctx->idfd_map = map;
     uv_read_start(req->handle, remote_alloc_cb, remote_read_cb);
     fprintf(stderr, "Connected to remote\n");
-    int r = uv_listen((uv_stream_t*) &remote_ctx_long->listen->server, 128 /*backlog*/, accept_cb);
-    if (r) ERROR("listen error", r)
-    fprintf(stderr, "Listening on localhost:7000\n");
     
 }   
 
 // socks accept callback
-static void accept_cb(uv_stream_t *server, int status) {
+static void socks_accept_cb(uv_stream_t *server, int status) {
     if (status) ERROR("async connect", status);
     socks_handshake_t *socks_hsctx = calloc(1, sizeof(socks_handshake_t));
     socks_hsctx->server.data = socks_hsctx;
@@ -401,7 +398,6 @@ static void remote_write_cb(uv_write_t *req, int status) {
 
 
 int main(int argc, char **argv) {
-    conf_t conf;
     memset(&conf, '\0', sizeof(conf));
 #ifndef DEBUG
     int c, option_index = 0;
@@ -478,14 +474,16 @@ int main(int argc, char **argv) {
     uv_tcp_init(loop, &socks_ctx->server);
     uv_tcp_init(loop, &remote_ctx_long->remote);
     
-    int r = uv_ip4_addr(conf.server_address, conf.serverport, &connect_addr);
-    r = uv_tcp_connect(req, &remote_ctx_long->remote, (struct sockaddr*)&connect_addr, connect_to_remote_cb);
+//    int r = uv_ip4_addr(conf.server_address, conf.serverport, &connect_addr);
+//    r = uv_tcp_connect(req, &remote_ctx_long->remote, (struct sockaddr*)&connect_addr, connect_to_remote_cb);
     r = uv_ip4_addr(conf.local_address, conf.localport, &bind_addr);
     LOGD("Ready to connect to remote server");
     r = uv_tcp_bind(&socks_ctx->server, (struct sockaddr*)&bind_addr, 0);
     if(r < 0)
     	ERROR("bind error", r);
-    
+    int r = uv_listen((uv_stream_t*) &remote_ctx_long->listen->server, 128 /*backlog*/, socks_accept_cb);
+    if (r) ERROR("listen error", r)
+        fprintf(stderr, "Listening on localhost:7000\n");
     uv_run(loop, UV_RUN_DEFAULT);
     CLOSE_LOGFILE;
     return 0;
