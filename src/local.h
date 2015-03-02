@@ -128,7 +128,7 @@ typedef struct
     int offset;
     int expect_to_recv;
     uint32_t sid;
-    socks_handshake_t managed_socks_list; // SOCKS5 connections managed by this remote_ctx
+    socks_connection_list_t managed_socks_list; // SOCKS5 connections managed by this remote_ctx
 } remote_ctx_t;
 
 

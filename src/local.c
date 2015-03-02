@@ -472,7 +472,7 @@ int main(int argc, char **argv) {
     req->data = remote_ctx_long;
     remote_ctx_long->remote.data = remote_ctx_long;
     remote_ctx_long->listen = socks_ctx;
-    list_init(remote_ctx_long->managed_socks_list);
+    list_init(&remote_ctx_long->managed_socks_list);
     socks_ctx->server.data = socks_ctx;
 
     uv_tcp_init(loop, &socks_ctx->server);
