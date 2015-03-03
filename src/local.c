@@ -23,6 +23,8 @@ static void send_EOF_packet(socks_handshake_t* socks_hsctx, remote_ctx_t* remote
 static void connect_to_remote_cb(uv_connect_t* req, int status);
 static void socks_accept_cb(uv_stream_t *server, int status);
 static void remote_after_close_cb(uv_handle_t* handle);
+static void remote_on_connect(uv_connect_t* req, int status);
+static remote_ctx_t* create_new_long_connection(server_ctx_t* listener);
 
 int verbose = 0;
 int total_read;
@@ -210,6 +212,7 @@ static void remote_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *b
 
     }
 }
+
 // Init a long connection to your server
 static void connect_to_remote_cb(uv_connect_t* req, int status) {
     remote_ctx_t* ctx = (remote_ctx_t *)req->data;
@@ -219,28 +222,82 @@ static void connect_to_remote_cb(uv_connect_t* req, int status) {
         return;
     }
     req->handle->data = ctx;
-    struct clib_map* map = new_c_map (compare_id, NULL, NULL);
+    struct clib_map* map = new_c_map(compare_id, NULL, NULL);
     ctx->idfd_map = map;
     uv_read_start(req->handle, remote_alloc_cb, remote_read_cb);
+    socks_handshake_t* socks_hsctx = NULL;
+    while ((socks_hsctx =list_get_head_elem(&ctx->managed_socks_list))) {
+        uv_read_start((uv_stream_t*) &socks_hsctx->server, socks_handshake_alloc_cb,
+                      socks_handshake_read_cb);
+    }
+    ctx->connected = RC_OK;
     fprintf(stderr, "Connected to remote\n");
     
 }   
 
+static int try_to_connect_remote(remote_ctx_t* ctx) {
+    struct sockaddr_in remote_addr;
+    memset(&remote_addr, 0, sizeof(remote_addr));
+    int r = uv_ip4_addr(conf.server_address, conf.serverport, &remote_addr);
+    if (r)
+        FATAL("wrong address!");
+    uv_connect_t* remote_conn_req = (uv_connect_t*) malloc(sizeof(uv_connect_t));
+    uv_tcp_init(loop, &ctx->remote);
+    remote_conn_req->data = ctx;
+    return uv_tcp_connect(remote_conn_req, &ctx->remote, (struct sockaddr*)&remote_addr, connect_to_remote_cb);
+}
+
+static void remote_on_connect(uv_connect_t* req, int status) {
+    remote_ctx_t* ctx = (remote_ctx_t*)req->data;
+    if (status) {
+        LOGD("error in remote_on_connect");
+        uv_close((uv_handle_t*)&ctx->remote, NULL);
+        free(req);
+        return;
+    }
+
+
+
+}
+
 // socks accept callback
 static void socks_accept_cb(uv_stream_t *server, int status) {
-    if (status) ERROR("async connect", status);
+    if (status)
+        ERROR("async connect", status);
+    server_ctx_t *listener = (server_ctx_t*)server->data;
     socks_handshake_t *socks_hsctx = calloc(1, sizeof(socks_handshake_t));
     socks_hsctx->server.data = socks_hsctx;
     uv_tcp_init(loop, &socks_hsctx->server);
+    if (listener->remote_long != NULL) {
+        remote_ctx_t* remote_ctx = listener->remote_long;
+//        if (remote_ctx->closed != 1) {
+//            
+//        }
+        list_add_to_tail(&remote_ctx->managed_socks_list, socks_hsctx);
+        switch (remote_ctx->connected) {
+            case RC_OFF:
+                try_to_connect_remote(listener);
+                remote_ctx->connected = RC_ESTABLISHING;
+                break;
+            case RC_OK:
+                uv_read_start((uv_stream_t*) &socks_hsctx->server, socks_handshake_alloc_cb,
+                                  socks_handshake_read_cb);
+            case RC_ESTABLISHING:
+                break;
+        }
+    }
+    else {
+        listener->remote_long = create_new_long_connection(listener);
+        try_to_connect_remote(listener);
+    }
     
     int r = uv_accept(server, (uv_stream_t*) &socks_hsctx->server);
     if (r) {
-      fprintf(stderr, "error accepting connection %d", r);
-      uv_close((uv_handle_t*) &socks_hsctx->server, NULL);
-    } else {
-      uv_read_start((uv_stream_t*) &socks_hsctx->server, socks_handshake_alloc_cb,
-                  socks_handshake_read_cb);
+        fprintf(stderr, "error accepting connection %d", r);
+        uv_close((uv_handle_t*) &socks_hsctx->server, NULL);
     }
+    
+
 }
 
 static void socks_handshake_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t *buf) {
@@ -396,6 +453,20 @@ static void remote_write_cb(uv_write_t *req, int status) {
     free(wr);
 }
 
+static remote_ctx_t* create_new_long_connection(server_ctx_t* listener){
+    remote_ctx_t* remote_ctx_long;
+    remote_ctx_long = calloc(1, sizeof(remote_ctx_t));
+    if (remote_ctx_long == NULL) {
+        FATAL("Not enough memory");
+    }
+    remote_ctx_long->expect_to_recv = HDR_LEN;
+//    uv_connect_t *req = (uv_connect_t *)calloc(1, sizeof(uv_connect_t));
+//    req->data = remote_ctx_long;
+    remote_ctx_long->remote.data = remote_ctx_long;
+    remote_ctx_long->listen = listener;
+    list_init(&remote_ctx_long->managed_socks_list);
+    return remote_ctx_long;
+}
 
 int main(int argc, char **argv) {
     memset(&conf, '\0', sizeof(conf));
@@ -405,7 +476,7 @@ int main(int argc, char **argv) {
     opterr = 0;
     static struct option long_options[] =
     {
-        { 0, 0, 0, 0 }
+        {0, 0, 0, 0}
     };
     
     while ((c = getopt_long(argc, argv, "c:r:l:p:P:V",
@@ -461,30 +532,23 @@ int main(int argc, char **argv) {
     char* locallog = "/tmp/local.log";
     USE_LOGFILE(locallog);
     loop = uv_default_loop();
-    server_ctx *socks_ctx = calloc(1, sizeof(server_ctx));
-    remote_ctx_long = calloc(1, sizeof(remote_ctx_t));
-    remote_ctx_long->expect_to_recv = 7;
-    uv_connect_t *req = (uv_connect_t *)calloc(1, sizeof(uv_connect_t));
-    req->data = remote_ctx_long;
-    remote_ctx_long->remote.data = remote_ctx_long;
-    remote_ctx_long->listen = socks_ctx;
-    list_init(&remote_ctx_long->managed_socks_list);
-    socks_ctx->server.data = socks_ctx;
+    server_ctx_t *listener = calloc(1, sizeof(server_ctx_t));
+    listener->server.data = listener;
+    listener->remote_long = create_new_long_connection(listener);
 
-    uv_tcp_init(loop, &socks_ctx->server);
-    uv_tcp_init(loop, &remote_ctx_long->remote);
+    uv_tcp_init(loop, &listener->server);
+    uv_tcp_init(loop, &listener->remote_long->remote);
     
-//    int r = uv_ip4_addr(conf.server_address, conf.serverport, &connect_addr);
-//    r = uv_tcp_connect(req, &remote_ctx_long->remote, (struct sockaddr*)&connect_addr, connect_to_remote_cb);
     int r = 0;
     r = uv_ip4_addr(conf.local_address, conf.localport, &bind_addr);
     LOGD("Ready to connect to remote server");
-    r = uv_tcp_bind(&socks_ctx->server, (struct sockaddr*)&bind_addr, 0);
-    if(r < 0)
+    r = uv_tcp_bind(&listener->server, (struct sockaddr*)&bind_addr, 0);
+    if (r < 0)
     	ERROR("bind error", r);
-    r = uv_listen((uv_stream_t*) &remote_ctx_long->listen->server, 128 /*backlog*/, socks_accept_cb);
-    if (r) ERROR("listen error", r)
-        fprintf(stderr, "Listening on localhost:7000\n");
+    r = uv_listen((uv_stream_t*) &listener->server, 128 /*backlog*/, socks_accept_cb);
+    if (r)
+        ERROR("listen error", r)
+    fprintf(stderr, "Listening on localhost:7000\n");
     uv_run(loop, UV_RUN_DEFAULT);
     CLOSE_LOGFILE;
     return 0;

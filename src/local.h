@@ -6,6 +6,8 @@
 #define SOCKS5_FISRT_RESP_SIZE 2
 #define INT_MAX 2147483647
 #define BUF_SIZE 2048
+
+// packet related MACROs
 #define MAX_PKT_SIZE 81920
 #define ID_LEN 4
 #define PKT_LEN 2
@@ -14,6 +16,13 @@
 #define ATYP_LEN 1
 #define ADDRLEN_LEN  1
 #define PORT_LEN 2
+#define HDR_LEN 7
+
+// remote connection status MACROs
+#define RC_OFF 0
+#define RC_ESTABLISHING 1
+#define RC_OK 2
+
 
 #define EXP_TO_RECV_LEN (ID_LEN + RSV_LEN + DATALEN_LEN)
 
@@ -61,6 +70,8 @@ int compare_id (void* left, void* right) {
     return *(uint32_t*)left < *(uint32_t*)right? -1:1;
 }
 
+//struct remote_ctx;
+
 typedef struct {
     uv_write_t req;
     uv_buf_t buf;
@@ -71,7 +82,8 @@ typedef struct
 	uv_tcp_t server;
 	size_t buffer_len; // Also use as pending cound after handshake
 	int stage;
-} server_ctx;
+    struct remote_ctx* remote_long;
+} server_ctx_t;
 
 typedef struct packet{
 	char* rawpacket;
@@ -112,14 +124,14 @@ typedef struct socks_connection_list{
     socks_handshake_t head;
 } socks_connection_list_t;
 
-typedef struct
+typedef struct remote_ctx
 {
 	uv_tcp_t remote;
 	int stage;
 	int run;
 	size_t buffer_len;
     struct clib_map* idfd_map;  // for mapping session id with remote fd
-	server_ctx* listen;
+	server_ctx_t* listen;
     char packet_buf[MAX_PKT_SIZE];
     char recv_buffer[MAX_PKT_SIZE];
     tmp_packet_t tmp_packet;
