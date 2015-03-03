@@ -226,10 +226,13 @@ static void connect_to_remote_cb(uv_connect_t* req, int status) {
     ctx->idfd_map = map;
     uv_read_start(req->handle, remote_alloc_cb, remote_read_cb);
     socks_handshake_t* socks_hsctx = NULL;
+    
+    /* this is wrong, a endless while*/
     while ((socks_hsctx =list_get_head_elem(&ctx->managed_socks_list))) {
         uv_read_start((uv_stream_t*) &socks_hsctx->server, socks_handshake_alloc_cb,
                       socks_handshake_read_cb);
     }
+    
     ctx->connected = RC_OK;
     fprintf(stderr, "Connected to remote\n");
     
@@ -241,23 +244,11 @@ static int try_to_connect_remote(remote_ctx_t* ctx) {
     int r = uv_ip4_addr(conf.server_address, conf.serverport, &remote_addr);
     if (r)
         FATAL("wrong address!");
+    remote_ctx->connected = RC_ESTABLISHING;
     uv_connect_t* remote_conn_req = (uv_connect_t*) malloc(sizeof(uv_connect_t));
     uv_tcp_init(loop, &ctx->remote);
     remote_conn_req->data = ctx;
     return uv_tcp_connect(remote_conn_req, &ctx->remote, (struct sockaddr*)&remote_addr, connect_to_remote_cb);
-}
-
-static void remote_on_connect(uv_connect_t* req, int status) {
-    remote_ctx_t* ctx = (remote_ctx_t*)req->data;
-    if (status) {
-        LOGD("error in remote_on_connect");
-        uv_close((uv_handle_t*)&ctx->remote, NULL);
-        free(req);
-        return;
-    }
-
-
-
 }
 
 // socks accept callback
@@ -277,11 +268,11 @@ static void socks_accept_cb(uv_stream_t *server, int status) {
         switch (remote_ctx->connected) {
             case RC_OFF:
                 try_to_connect_remote(listener);
-                remote_ctx->connected = RC_ESTABLISHING;
                 break;
             case RC_OK:
                 uv_read_start((uv_stream_t*) &socks_hsctx->server, socks_handshake_alloc_cb,
                                   socks_handshake_read_cb);
+                break;
             case RC_ESTABLISHING:
                 break;
         }
