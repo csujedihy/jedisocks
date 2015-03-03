@@ -26,7 +26,7 @@
 
 #define EXP_TO_RECV_LEN (ID_LEN + RSV_LEN + DATALEN_LEN)
 
-// built-in link list MACROs, modified from libcork
+// built-in link list MACROs, originated from libcork
 #define list_init(list) \
 do { \
 (list)->head.next = &(list)->head; \
@@ -80,19 +80,18 @@ typedef struct {
 typedef struct
 {
 	uv_tcp_t server;
-	size_t buffer_len; // Also use as pending cound after handshake
-	int stage;
+    int stage;
     struct remote_ctx* remote_long;
 } server_ctx_t;
 
-typedef struct packet{
+typedef struct packet {
 	char* rawpacket;
 	int pktsize;
 	struct packet* prev;
 	struct packet* next;
 } packet_t;
 
-typedef struct send_queue{
+typedef struct send_queue {
 	packet_t head;
 } queue_t;
 

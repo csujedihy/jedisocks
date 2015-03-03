@@ -259,6 +259,11 @@ static void socks_accept_cb(uv_stream_t *server, int status) {
     socks_handshake_t *socks_hsctx = calloc(1, sizeof(socks_handshake_t));
     socks_hsctx->server.data = socks_hsctx;
     uv_tcp_init(loop, &socks_hsctx->server);
+    int r = uv_accept(server, (uv_stream_t*) &socks_hsctx->server);
+    if (r) {
+        fprintf(stderr, "accepting connection failed %d", r);
+        uv_close((uv_handle_t*) &socks_hsctx->server, NULL);
+    }
     if (listener->remote_long != NULL) {
         remote_ctx_t* remote_ctx = listener->remote_long;
 //        if (remote_ctx->closed != 1) {
@@ -267,7 +272,7 @@ static void socks_accept_cb(uv_stream_t *server, int status) {
         list_add_to_tail(&remote_ctx->managed_socks_list, socks_hsctx);
         switch (remote_ctx->connected) {
             case RC_OFF:
-                try_to_connect_remote(listener);
+                try_to_connect_remote(remote_ctx);
                 break;
             case RC_OK:
                 uv_read_start((uv_stream_t*) &socks_hsctx->server, socks_handshake_alloc_cb,
@@ -279,15 +284,8 @@ static void socks_accept_cb(uv_stream_t *server, int status) {
     }
     else {
         listener->remote_long = create_new_long_connection(listener);
-        try_to_connect_remote(listener);
+        try_to_connect_remote(listener->remote_long);
     }
-    
-    int r = uv_accept(server, (uv_stream_t*) &socks_hsctx->server);
-    if (r) {
-        fprintf(stderr, "error accepting connection %d", r);
-        uv_close((uv_handle_t*) &socks_hsctx->server, NULL);
-    }
-    
 
 }
 
@@ -455,6 +453,7 @@ static remote_ctx_t* create_new_long_connection(server_ctx_t* listener){
 //    req->data = remote_ctx_long;
     remote_ctx_long->remote.data = remote_ctx_long;
     remote_ctx_long->listen = listener;
+    remote_ctx_long->connected = RC_OFF;
     list_init(&remote_ctx_long->managed_socks_list);
     return remote_ctx_long;
 }
