@@ -9,7 +9,6 @@
 /* Begin PBXBuildFile section */
 		C11EC93B1AA5770900E289C0 /* main.c in Sources */ = {isa = PBXBuildFile; fileRef = C11EC93A1AA5770900E289C0 /* main.c */; };
 		C11EC9401AA5774A00E289C0 /* libz.1.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = C11EC93F1AA5774A00E289C0 /* libz.1.dylib */; };
-		C11EC9471AA589E300E289C0 /* libpthread.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = C11EC9461AA589E300E289C0 /* libpthread.dylib */; };
 		C1451D721A9DA971008BDE72 /* js0n.c in Sources */ = {isa = PBXBuildFile; fileRef = C1451D701A9DA971008BDE72 /* js0n.c */; };
 		C1451D731A9DA971008BDE72 /* js0n.c in Sources */ = {isa = PBXBuildFile; fileRef = C1451D701A9DA971008BDE72 /* js0n.c */; };
 		C1451D761A9DBF6C008BDE72 /* jconf.c in Sources */ = {isa = PBXBuildFile; fileRef = C1451D751A9DBF6C008BDE72 /* jconf.c */; };
@@ -58,7 +57,6 @@
 		C11EC9381AA5770900E289C0 /* gzip-test */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "gzip-test"; sourceTree = BUILT_PRODUCTS_DIR; };
 		C11EC93A1AA5770900E289C0 /* main.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = main.c; sourceTree = "<group>"; };
 		C11EC93F1AA5774A00E289C0 /* libz.1.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libz.1.dylib; path = ../../../../../../usr/local/lib/libz.1.dylib; sourceTree = "<group>"; };
-		C11EC9461AA589E300E289C0 /* libpthread.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libpthread.dylib; path = usr/lib/libpthread.dylib; sourceTree = SDKROOT; };
 		C1451D701A9DA971008BDE72 /* js0n.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = js0n.c; sourceTree = SOURCE_ROOT; };
 		C1451D711A9DA971008BDE72 /* js0n.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = js0n.h; sourceTree = SOURCE_ROOT; };
 		C1451D741A9DBBBB008BDE72 /* jconf.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = jconf.h; sourceTree = SOURCE_ROOT; };
@@ -82,7 +80,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				C11EC9471AA589E300E289C0 /* libpthread.dylib in Frameworks */,
 				C11EC9401AA5774A00E289C0 /* libz.1.dylib in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -117,7 +114,6 @@
 		C1F1531F1A9C7BE8009779D2 = {
 			isa = PBXGroup;
 			children = (
-				C11EC9461AA589E300E289C0 /* libpthread.dylib */,
 				C11EC93F1AA5774A00E289C0 /* libz.1.dylib */,
 				C1EA7FCB1A9C7ED4009C01F6 /* libuv.1.dylib */,
 				C1F153371A9C7C46009779D2 /* js-local */,
