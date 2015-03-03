@@ -476,12 +476,13 @@ int main(int argc, char **argv) {
     
 //    int r = uv_ip4_addr(conf.server_address, conf.serverport, &connect_addr);
 //    r = uv_tcp_connect(req, &remote_ctx_long->remote, (struct sockaddr*)&connect_addr, connect_to_remote_cb);
+    int r = 0;
     r = uv_ip4_addr(conf.local_address, conf.localport, &bind_addr);
     LOGD("Ready to connect to remote server");
     r = uv_tcp_bind(&socks_ctx->server, (struct sockaddr*)&bind_addr, 0);
     if(r < 0)
     	ERROR("bind error", r);
-    int r = uv_listen((uv_stream_t*) &remote_ctx_long->listen->server, 128 /*backlog*/, socks_accept_cb);
+    r = uv_listen((uv_stream_t*) &remote_ctx_long->listen->server, 128 /*backlog*/, socks_accept_cb);
     if (r) ERROR("listen error", r)
         fprintf(stderr, "Listening on localhost:7000\n");
     uv_run(loop, UV_RUN_DEFAULT);
