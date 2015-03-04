@@ -2,6 +2,8 @@
 #define LOCAL_H_
 #include "c_map.h"
 
+
+// SOCKS5 negotiation related MACROs
 #define SOCKS5_FISRT_REQ_SIZE 3
 #define SOCKS5_FISRT_RESP_SIZE 2
 #define INT_MAX 2147483647
@@ -16,7 +18,8 @@
 #define ATYP_LEN 1
 #define ADDRLEN_LEN  1
 #define PORT_LEN 2
-#define HDR_LEN 7
+#define HDR_LEN (ID_LEN + RSV_LEN + DATALEN_LEN)
+#define EXP_TO_RECV_LEN (ID_LEN + RSV_LEN + DATALEN_LEN)
 
 // remote connection status MACROs
 #define RC_OFF 0
@@ -24,7 +27,6 @@
 #define RC_OK 2
 
 
-#define EXP_TO_RECV_LEN (ID_LEN + RSV_LEN + DATALEN_LEN)
 
 // built-in link list MACROs, originated from libcork
 #define list_init(list) \
@@ -121,6 +123,7 @@ typedef struct socks_handshake
     char host[256];	// to support ipv6
     char port[16];
     char* response;
+    struct remote_ctx* remote_long;
     struct socks_handshake* prev;
     struct socks_handshake* next;
 } socks_handshake_t;
