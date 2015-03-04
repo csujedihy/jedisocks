@@ -225,12 +225,16 @@ static void connect_to_remote_cb(uv_connect_t* req, int status) {
     struct clib_map* map = new_c_map(compare_id, NULL, NULL);
     ctx->idfd_map = map;
     uv_read_start(req->handle, remote_alloc_cb, remote_read_cb);
-    socks_handshake_t* socks_hsctx = NULL;
     
-    /* this is wrong, a endless while*/
-    while ((socks_hsctx =list_get_head_elem(&ctx->managed_socks_list))) {
-        uv_read_start((uv_stream_t*) &socks_hsctx->server, socks_handshake_alloc_cb,
-                      socks_handshake_read_cb);
+    /* visit all SOCKS5 context and tell them to start reading bufs*/
+    socks_handshake_t* curr = NULL;
+    for (curr = list_get_start(&ctx->managed_socks_list);
+         !list_elem_is_end(&ctx->managed_socks_list, curr);
+         curr = curr->next) {
+        if (curr != NULL)
+            uv_read_start((uv_stream_t*) &curr->server, socks_handshake_alloc_cb,
+                          socks_handshake_read_cb);
+        
     }
     
     ctx->connected = RC_OK;
@@ -244,7 +248,7 @@ static int try_to_connect_remote(remote_ctx_t* ctx) {
     int r = uv_ip4_addr(conf.server_address, conf.serverport, &remote_addr);
     if (r)
         FATAL("wrong address!");
-    remote_ctx->connected = RC_ESTABLISHING;
+    ctx->connected = RC_ESTABLISHING;
     uv_connect_t* remote_conn_req = (uv_connect_t*) malloc(sizeof(uv_connect_t));
     uv_tcp_init(loop, &ctx->remote);
     remote_conn_req->data = ctx;
@@ -266,10 +270,8 @@ static void socks_accept_cb(uv_stream_t *server, int status) {
     }
     if (listener->remote_long != NULL) {
         remote_ctx_t* remote_ctx = listener->remote_long;
-//        if (remote_ctx->closed != 1) {
-//            
-//        }
         list_add_to_tail(&remote_ctx->managed_socks_list, socks_hsctx);
+
         switch (remote_ctx->connected) {
             case RC_OFF:
                 try_to_connect_remote(remote_ctx);
@@ -285,6 +287,8 @@ static void socks_accept_cb(uv_stream_t *server, int status) {
     else {
         listener->remote_long = create_new_long_connection(listener);
         try_to_connect_remote(listener->remote_long);
+        list_add_to_tail(&listener->remote_long->managed_socks_list, socks_hsctx);
+
     }
 
 }

@@ -64,6 +64,12 @@ do { \
     (elem)->next->prev = (elem)->prev; \
 } while (0)
 
+#define list_get_start(list) \
+((list)->head.next)
+
+#define list_elem_is_end(list, element) \
+((element) == &(list)->head)
+
 int compare_id (void* left, void* right) {
     if (*(uint32_t*)left == *(uint32_t*)right)
         return 0;
