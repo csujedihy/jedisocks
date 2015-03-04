@@ -42,6 +42,8 @@ queue_t* send_queue;
 static void remote_after_close_cb(uv_handle_t* handle) {
     remote_ctx_t* remote_ctx = (remote_ctx_t*) handle->data;
     delete_c_map(remote_ctx->idfd_map);
+    
+    /*
     socks_handshake_t* curr = NULL;
     for (curr = list_get_start(&remote_ctx->managed_socks_list);
          !list_elem_is_end(&remote_ctx->managed_socks_list, curr);
@@ -55,6 +57,7 @@ static void remote_after_close_cb(uv_handle_t* handle) {
             }
         }
     }
+    */
     remote_ctx->listen->remote_long = NULL;
     free(remote_ctx);
 }
@@ -136,26 +139,25 @@ static void remote_exception(remote_ctx_t* remote_ctx) {
         struct clib_iterator *socks_map_itr;
         struct clib_object *elem;
         socks_handshake_t* socks_hsctx = NULL;
-        printf ( "------------------------------------------------\n");
+        
+        /* traverse the whole map to stop SOCKS5 reading bufs*/
+        fprintf(stderr, "------------------------------------------------\n");
         socks_map_itr = new_iterator_c_map (remote_ctx->idfd_map);
         elem  = socks_map_itr->get_next(socks_map_itr);
         while ( elem ) {
             socks_hsctx = (socks_handshake_t*)socks_map_itr->get_value(elem);
             elem = socks_map_itr->get_next(socks_map_itr);
+            if (socks_hsctx != NULL) {
+                uv_read_stop((uv_stream_t*) &socks_hsctx->server);
+                socks_hsctx->remote_long = NULL;
+                uv_shutdown_t *req = malloc(sizeof(uv_shutdown_t));
+                req->data = socks_hsctx;
+                uv_shutdown(req, (uv_stream_t*)&socks_hsctx->server, socks_after_shutdown_cb);
+            
+            }
         }
         delete_iterator_c_map(socks_map_itr);
-        /*
-        int i = 0;
-        socks_handshake_t* curr = NULL;
-        for (curr = list_get_start(&remote_ctx->managed_socks_list);
-             !list_elem_is_end(&remote_ctx->managed_socks_list, curr);
-             curr = curr->next) {
-            fprintf(stderr, "stop %d\n", i);
-            if (curr != NULL)
-                uv_read_stop((uv_stream_t*) &curr->server);
-            
-        }
-        */
+        
         uv_close((uv_handle_t*) &remote_ctx->remote, remote_after_close_cb);
     }
 }
@@ -268,7 +270,8 @@ static void remote_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *b
 static void connect_to_remote_cb(uv_connect_t* req, int status) {
     remote_ctx_t* ctx = (remote_ctx_t *)req->data;
     if (status) {
-        uv_close((uv_handle_t*)&ctx->remote, NULL);
+        fprintf(stderr, "connect error\n");
+        remote_exception(ctx);
         free(req);
         return;
     }
@@ -294,6 +297,7 @@ static void connect_to_remote_cb(uv_connect_t* req, int status) {
 }   
 
 static int try_to_connect_remote(remote_ctx_t* ctx) {
+    fprintf(stderr, "try to connect to remote\n");
     struct sockaddr_in remote_addr;
     memset(&remote_addr, 0, sizeof(remote_addr));
     int r = uv_ip4_addr(conf.server_address, conf.serverport, &remote_addr);
@@ -301,13 +305,13 @@ static int try_to_connect_remote(remote_ctx_t* ctx) {
         FATAL("wrong address!");
     ctx->connected = RC_ESTABLISHING;
     uv_connect_t* remote_conn_req = (uv_connect_t*) malloc(sizeof(uv_connect_t));
-    uv_tcp_init(loop, &ctx->remote);
     remote_conn_req->data = ctx;
     return uv_tcp_connect(remote_conn_req, &ctx->remote, (struct sockaddr*)&remote_addr, connect_to_remote_cb);
 }
 
 // socks accept callback
 static void socks_accept_cb(uv_stream_t *server, int status) {
+    fprintf(stderr, "accepting a new connection\n");
     if (status)
         ERROR("async connect", status);
     server_ctx_t *listener = (server_ctx_t*)server->data;
@@ -337,8 +341,8 @@ static void socks_accept_cb(uv_stream_t *server, int status) {
     }
     else {
         listener->remote_long = create_new_long_connection(listener);
-        try_to_connect_remote(listener->remote_long);
         list_add_to_tail(&listener->remote_long->managed_socks_list, socks_hsctx);
+        try_to_connect_remote(listener->remote_long);
         socks_hsctx->remote_long = listener->remote_long;
     }
 
@@ -522,6 +526,7 @@ static remote_ctx_t* create_new_long_connection(server_ctx_t* listener){
     remote_ctx_long->remote.data = remote_ctx_long;
     remote_ctx_long->listen = listener;
     remote_ctx_long->connected = RC_OFF;
+    uv_tcp_init(loop, &remote_ctx_long->remote);
     list_init(&remote_ctx_long->managed_socks_list);
     return remote_ctx_long;
 }
@@ -595,7 +600,7 @@ int main(int argc, char **argv) {
     listener->remote_long = create_new_long_connection(listener);
 
     uv_tcp_init(loop, &listener->server);
-    uv_tcp_init(loop, &listener->remote_long->remote);
+//    uv_tcp_init(loop, &listener->remote_long->remote);
     
     int r = 0;
     r = uv_ip4_addr(conf.local_address, conf.localport, &bind_addr);
