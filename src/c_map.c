@@ -480,6 +480,7 @@ delete_c_rb(struct clib_rb* pTree) {
     free ( pTree );
     return rc;
 }
+
 struct clib_rb_node *
 minimum_c_rb( struct clib_rb* pTree, struct clib_rb_node* x ) {
     while ( x->left != rb_sentinel)

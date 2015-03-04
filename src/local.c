@@ -133,14 +133,29 @@ static void remote_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t *buf) {
 static void remote_exception(remote_ctx_t* remote_ctx) {
     uv_read_stop((uv_stream_t *)&remote_ctx->remote);
     if (!uv_is_closing((uv_handle_t*)&remote_ctx->remote)) {
+        struct clib_iterator *socks_map_itr;
+        struct clib_object *elem;
+        socks_handshake_t* socks_hsctx = NULL;
+        printf ( "------------------------------------------------\n");
+        socks_map_itr = new_iterator_c_map (remote_ctx->idfd_map);
+        elem  = socks_map_itr->get_next(socks_map_itr);
+        while ( elem ) {
+            socks_hsctx = (socks_handshake_t*)socks_map_itr->get_value(elem);
+            elem = socks_map_itr->get_next(socks_map_itr);
+        }
+        delete_iterator_c_map(socks_map_itr);
+        /*
+        int i = 0;
         socks_handshake_t* curr = NULL;
         for (curr = list_get_start(&remote_ctx->managed_socks_list);
              !list_elem_is_end(&remote_ctx->managed_socks_list, curr);
              curr = curr->next) {
+            fprintf(stderr, "stop %d\n", i);
             if (curr != NULL)
                 uv_read_stop((uv_stream_t*) &curr->server);
             
         }
+        */
         uv_close((uv_handle_t*) &remote_ctx->remote, remote_after_close_cb);
     }
 }
@@ -149,7 +164,7 @@ static void remote_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *b
     remote_ctx_t* ctx = (remote_ctx_t*)client->data;
     if (verbose) LOGD("nread = %d\n", nread);
     if (nread == UV_EOF) {
-        fprintf(stderr, "remote long connection is closed");
+        fprintf(stderr, "remote long connection is closed\n");
         remote_exception(ctx);
     } else if (nread > 0) {
         if (!ctx->reset) {
@@ -384,6 +399,7 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
                 write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
                 
                 // to add a pointer to refer to long remote connection
+                wr->req.data = socks_hsctx;
                 wr->buf = uv_buf_init(pkt_buf, ID_LEN + RSV_LEN + DATALEN_LEN + ATYP_LEN \
                  + ADDRLEN_LEN + socks_hsctx->addrlen + PORT_LEN + nread);
                 uv_write(&wr->req, (uv_stream_t*)&socks_hsctx->remote_long->remote, &wr->buf, 1, remote_write_cb);
