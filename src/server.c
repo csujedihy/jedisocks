@@ -10,16 +10,11 @@
 #include "c_map.h"
 #include "jconf.h"
 
-// TODO: 1) server_read_cb: handle the case when session_id is in the map
-//       2) add TCP timeout watchers to remote connections. if not data transmits in a long time, then close the connection
-//       3) when server receives a packet with RSV = 0x04, then actively close the remote connection and release the session_id in the map
-//       4) if server receives a FIN packet from remote, sends a packet with RSV = 0x04 to local server (client)
-//       5) handle exceptions, e.g. nread = 0 or nread = EV_EOF
-//       6) parse json configuration file as shadowsocks did
-
 uv_loop_t *loop;
 int verbose = 0;
 FILE * logfile = NULL;
+int log_to_file = 0;
+
 static void remote_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t *buf);
 static void remote_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf);
 static void server_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t *buf);
@@ -38,6 +33,7 @@ static void send_EOF_packet(remote_ctx_t* ctx){
     int offset = 0;
     char* pkt_buf = malloc(EXP_TO_RECV_LEN);
     uint32_t session_id = htonl((uint32_t)ctx->session_id);
+    LOGD("the session id of the closing session is %d", ctx->session_id);
     uint16_t datalen = 0;
     char rsv = 0x04;
     pkt_maker(pkt_buf, &session_id, ID_LEN, offset);
@@ -49,7 +45,6 @@ static void send_EOF_packet(remote_ctx_t* ctx){
     wr->buf = uv_buf_init(pkt_buf, EXP_TO_RECV_LEN);
     uv_write(&wr->req, (uv_stream_t*)&ctx->server_ctx->server, &wr->buf, 1, server_write_cb);
 }
-
 
 static void remote_after_close_cb(uv_handle_t* handle) {
     remote_ctx_t* remote_ctx = (remote_ctx_t*)handle->data;
@@ -264,7 +259,7 @@ static void server_accept_cb(uv_stream_t *server, int status) {
 		LOGD("error accepting connection %d", r);
 		uv_close((uv_handle_t*)&ctx->server, NULL);
 	} else	{
-        struct clib_map* map = new_c_map (compare_id, NULL, NULL);
+        struct clib_map* map = new_c_map(compare_id, NULL, NULL);
         ctx->idfd_map = map;
 		uv_read_start((uv_stream_t*)&ctx->server, server_alloc_cb, server_read_cb);
 	}
@@ -279,11 +274,13 @@ static void server_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t *buf) {
 // complex! de-multiplexing the long connection
 static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
     if (verbose) LOGD("hehe nread = %d", nread);
+    
     LOGD("server_read_cb: ==============================start============================");
 	if (nread == UV_EOF) {
 		uv_close((uv_handle_t*) stream, NULL);
 	} else if (nread > 0) {
-        server_ctx_t* ctx = stream->data;
+        server_ctx_t* ctx = (server_ctx_t*)stream->data;
+        LOGD("server_read_cb: exist_ctx in session_id = %d, RSV = %d datalen = %d\n", ctx->packet.session_id, ctx->packet.rsv, ctx->packet.datalen);
         // one packet finished, reset!
         if (!ctx->reset) {
             LOGD("reset!");
@@ -301,18 +298,19 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
                 pkt_access(&ctx->packet.datalen, ctx->packet_buf, DATALEN_LEN, ctx->packet.offset);
                 ctx->packet.datalen = ntohs((uint16_t)ctx->packet.datalen);
                 ctx->expect_to_recv = ctx->packet.datalen;
-                LOGD("RSV = %d", ctx->packet.rsv);
+                LOGD("session id = %d RSV = %d", ctx->packet.session_id, ctx->packet.rsv);
                 ctx->stage = 1; 
                 // check packet's RSV, see if this packet has control info.
                 // 0x04 means peer wanted to close this session -> FIN
                 // peer has to make sure no more data issued on this session 
                 if (ctx->packet.rsv == 0x04) {
                     LOGD("received a packet with 0x04");
+                    LOGD("session id = %d", ctx->packet.session_id);
                     remote_ctx_t* exist_ctx = NULL;
                     if (remove_c_map(ctx->idfd_map, &ctx->packet.session_id, &exist_ctx)) {
-                        // stop watch read IO
+                        // stop watching read I/O
                         // elegantly close
-                        // closing ==4, peer closing in charge, just close remote
+                        // closing == 4, peer closing in charge, just close remote
                         uv_read_stop((uv_stream_t *)&exist_ctx->remote);
                         if (!uv_is_closing((uv_handle_t*)&exist_ctx->remote)) {
                             uv_shutdown_t *req = malloc(sizeof(uv_shutdown_t));
@@ -342,7 +340,9 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
                 {
                     if (exist_ctx == NULL)
                         LOGD("exist_ctx == NULL");
-                    LOGD("server_read_cb: exist_ctx in session_id = %d, datalen = %d\n", ctx->packet.session_id, ctx->packet.datalen);
+                    LOGD("server_read_cb: exist_ctx in session_id = %d, RSV = %d datalen = %d\n", ctx->packet.session_id, ctx->packet.rsv, ctx->packet.datalen);
+                    if (ctx->packet.rsv == 0x01)
+                        assert(0);
                     ctx->packet.payloadlen = ctx->packet.datalen;
                     packet_t* pkt_to_send = malloc(sizeof(packet_t));
                     memcpy(pkt_to_send, &ctx->packet, sizeof(packet_t));
@@ -402,8 +402,8 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
                     list_add_to_tail(&remote_ctx->send_queue, pkt_to_send);
                     //SHOWPKTDEBUGWODATA(remote_ctx);
                     if (ctx->packet.atyp == 0x03) {
-                        // have to resolve domain name first
                         uv_getaddrinfo_t* resolver = malloc(sizeof(uv_getaddrinfo_t));
+                        // have to resolve domain name first
                         resolver->data = remote_ctx;
                         int r = uv_getaddrinfo(loop, resolver, remote_addr_resolved, remote_ctx->host, NULL, NULL);
                     }
@@ -427,8 +427,10 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
                 LOGD("impossible! should never reach here (> datalen)\n");
             }
         }
-        else
+        else {
             LOGD("strange stage %d\n", ctx->stage);
+            assert(0);
+        }
 	}
     LOGD("server_read_cb: ==============================end==============================\n");
 
@@ -493,7 +495,8 @@ int main(int argc, char **argv)
 #endif
     server_validate_conf(&conf);
     char* serverlog = "/tmp/server.log";
-    USE_LOGFILE(serverlog);
+    if (log_to_file)
+        USE_LOGFILE(serverlog);
 	loop = uv_default_loop();
 	server_ctx_t* ctx = calloc(1, sizeof(server_ctx_t));
     ctx->expect_to_recv = EXP_TO_RECV_LEN;

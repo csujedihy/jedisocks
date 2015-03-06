@@ -31,18 +31,14 @@ int verbose = 0;
 int total_read;
 int total_written;
 int s_id = 0;
+
 conf_t conf;
 uv_loop_t *loop;
 FILE * logfile = NULL;
 
-// remote in local means the connection between client and server
-//remote_ctx_t *remote_ctx_long;
-queue_t* send_queue;
-
 static void remote_after_close_cb(uv_handle_t* handle) {
     remote_ctx_t* remote_ctx = (remote_ctx_t*) handle->data;
     delete_c_map(remote_ctx->idfd_map);
-    
     /*
     socks_handshake_t* curr = NULL;
     for (curr = list_get_start(&remote_ctx->managed_socks_list);
@@ -134,6 +130,7 @@ static void remote_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t *buf) {
 }
 
 static void remote_exception(remote_ctx_t* remote_ctx) {
+    fprintf(stderr, "remote_exception captured\n");
     uv_read_stop((uv_stream_t *)&remote_ctx->remote);
     if (!uv_is_closing((uv_handle_t*)&remote_ctx->remote)) {
         struct clib_iterator *socks_map_itr;
@@ -141,7 +138,6 @@ static void remote_exception(remote_ctx_t* remote_ctx) {
         socks_handshake_t* socks_hsctx = NULL;
         
         /* traverse the whole map to stop SOCKS5 reading bufs*/
-        fprintf(stderr, "------------------------------------------------\n");
         socks_map_itr = new_iterator_c_map (remote_ctx->idfd_map);
         elem  = socks_map_itr->get_next(socks_map_itr);
         while ( elem ) {
@@ -395,7 +391,6 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
                 pkt_maker(pkt_buf, &socks_hsctx->host, socks_hsctx->addrlen, offset);
                 pkt_maker(pkt_buf, &socks_hsctx->port, PORT_LEN, offset);
                 pkt_maker(pkt_buf, buf->base, nread, offset);
-                list_add_to_tail(send_queue, pkt);
                 //SHOW_BUFFER(pkt_buf, nread);
                 if (verbose) LOGD("now here is buf\n");
                 if (verbose) SHOW_BUFFER(buf->base, ID_LEN + RSV_LEN + DATALEN_LEN + ATYP_LEN \
@@ -427,7 +422,6 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
                 pkt_maker(pkt_buf, &rsv, RSV_LEN, offset);
                 pkt_maker(pkt_buf, &datalen_to_send, DATALEN_LEN, offset);
                 pkt_maker(pkt_buf, buf->base, nread, offset);
-                list_add_to_tail(send_queue, pkt);
                 if (verbose) SHOW_BUFFER(pkt_buf, nread);
                 
                 // to add a pointer to refer to long remote connection
@@ -590,17 +584,14 @@ int main(int argc, char **argv) {
 
     struct sockaddr_in bind_addr;
     struct sockaddr_in connect_addr;
-    send_queue = calloc(1, sizeof(queue_t));
-    list_init(send_queue);
     char* locallog = "/tmp/local.log";
     USE_LOGFILE(locallog);
     loop = uv_default_loop();
+    
     server_ctx_t *listener = calloc(1, sizeof(server_ctx_t));
     listener->server.data = listener;
     listener->remote_long = create_new_long_connection(listener);
-
     uv_tcp_init(loop, &listener->server);
-//    uv_tcp_init(loop, &listener->remote_long->remote);
     
     int r = 0;
     r = uv_ip4_addr(conf.local_address, conf.localport, &bind_addr);
