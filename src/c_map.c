@@ -360,7 +360,7 @@ __rb_remove_fixup( struct clib_rb* pTree, struct clib_rb_node* x ) {
     x->color = clib_black;
 }
 
-static struct clib_rb_node*  
+static struct clib_rb_node*
 __remove_c_rb(struct clib_rb* pTree, struct clib_rb_node* z ) {
     struct clib_rb_node* x = (struct clib_rb_node*)0 ;
     struct clib_rb_node* y = (struct clib_rb_node*)0 ;

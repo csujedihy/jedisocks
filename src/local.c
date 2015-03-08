@@ -345,7 +345,10 @@ static void socks_accept_cb(uv_stream_t *server, int status) {
 }
 
 static void socks_handshake_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t *buf) {
-    *buf = uv_buf_init((char*) malloc(size), size);
+    *buf = uv_buf_init((char*) malloc(BUF_SIZE), BUF_SIZE);
+    
+    // problem may be here
+    
     assert(buf->base != NULL);
 }
 

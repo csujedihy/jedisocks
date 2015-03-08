@@ -43,6 +43,11 @@ extern FILE * logfile;
         } \
     while (0)
 
+#define __LOGD(format, ...)   \
+do {    \
+} \
+while (0)
+
 #define FATAL(format, ...)   \
 do {    \
     if (logfile != NULL) {  \

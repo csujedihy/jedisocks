@@ -7,8 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		C11EC93B1AA5770900E289C0 /* main.c in Sources */ = {isa = PBXBuildFile; fileRef = C11EC93A1AA5770900E289C0 /* main.c */; };
-		C11EC9401AA5774A00E289C0 /* libz.1.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = C11EC93F1AA5774A00E289C0 /* libz.1.dylib */; };
 		C1451D721A9DA971008BDE72 /* js0n.c in Sources */ = {isa = PBXBuildFile; fileRef = C1451D701A9DA971008BDE72 /* js0n.c */; };
 		C1451D731A9DA971008BDE72 /* js0n.c in Sources */ = {isa = PBXBuildFile; fileRef = C1451D701A9DA971008BDE72 /* js0n.c */; };
 		C1451D761A9DBF6C008BDE72 /* jconf.c in Sources */ = {isa = PBXBuildFile; fileRef = C1451D751A9DBF6C008BDE72 /* jconf.c */; };
@@ -24,15 +22,6 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
-		C11EC9361AA5770900E289C0 /* CopyFiles */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = /usr/share/man/man1/;
-			dstSubfolderSpec = 0;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 1;
-		};
 		C1F153341A9C7C46009779D2 /* CopyFiles */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -54,7 +43,6 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		C11EC9381AA5770900E289C0 /* gzip-test */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "gzip-test"; sourceTree = BUILT_PRODUCTS_DIR; };
 		C11EC93A1AA5770900E289C0 /* main.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = main.c; sourceTree = "<group>"; };
 		C11EC93F1AA5774A00E289C0 /* libz.1.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libz.1.dylib; path = ../../../../../../usr/local/lib/libz.1.dylib; sourceTree = "<group>"; };
 		C1451D701A9DA971008BDE72 /* js0n.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = js0n.c; sourceTree = SOURCE_ROOT; };
@@ -76,14 +64,6 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		C11EC9351AA5770900E289C0 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				C11EC9401AA5774A00E289C0 /* libz.1.dylib in Frameworks */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		C1F153331A9C7C46009779D2 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -128,7 +108,6 @@
 			children = (
 				C1F153361A9C7C46009779D2 /* js-local */,
 				C1F153411A9C7C5B009779D2 /* js-server */,
-				C11EC9381AA5770900E289C0 /* gzip-test */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -163,23 +142,6 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		C11EC9371AA5770900E289C0 /* gzip-test */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = C11EC93E1AA5770900E289C0 /* Build configuration list for PBXNativeTarget "gzip-test" */;
-			buildPhases = (
-				C11EC9341AA5770900E289C0 /* Sources */,
-				C11EC9351AA5770900E289C0 /* Frameworks */,
-				C11EC9361AA5770900E289C0 /* CopyFiles */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			name = "gzip-test";
-			productName = "gzip-test";
-			productReference = C11EC9381AA5770900E289C0 /* gzip-test */;
-			productType = "com.apple.product-type.tool";
-		};
 		C1F153351A9C7C46009779D2 /* js-local */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = C1F1533A1A9C7C46009779D2 /* Build configuration list for PBXNativeTarget "js-local" */;
@@ -223,9 +185,6 @@
 				LastUpgradeCheck = 0610;
 				ORGANIZATIONNAME = jedihy;
 				TargetAttributes = {
-					C11EC9371AA5770900E289C0 = {
-						CreatedOnToolsVersion = 6.1.1;
-					};
 					C1F153351A9C7C46009779D2 = {
 						CreatedOnToolsVersion = 6.1.1;
 					};
@@ -248,20 +207,11 @@
 			targets = (
 				C1F153351A9C7C46009779D2 /* js-local */,
 				C1F153401A9C7C5B009779D2 /* js-server */,
-				C11EC9371AA5770900E289C0 /* gzip-test */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXSourcesBuildPhase section */
-		C11EC9341AA5770900E289C0 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				C11EC93B1AA5770900E289C0 /* main.c in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		C1F153321A9C7C46009779D2 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -289,32 +239,6 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
-		C11EC93C1AA5770900E289C0 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				GCC_PREPROCESSOR_DEFINITIONS = (
-					"DEBUG=1",
-					"$(inherited)",
-				);
-				LIBRARY_SEARCH_PATHS = (
-					"$(inherited)",
-					"$(SDKROOT)/usr/lib/system",
-				);
-				PRODUCT_NAME = "$(TARGET_NAME)";
-			};
-			name = Debug;
-		};
-		C11EC93D1AA5770900E289C0 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				LIBRARY_SEARCH_PATHS = (
-					"$(inherited)",
-					"$(SDKROOT)/usr/lib/system",
-				);
-				PRODUCT_NAME = "$(TARGET_NAME)";
-			};
-			name = Release;
-		};
 		C1F1532D1A9C7BE8009779D2 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -448,14 +372,6 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		C11EC93E1AA5770900E289C0 /* Build configuration list for PBXNativeTarget "gzip-test" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				C11EC93C1AA5770900E289C0 /* Debug */,
-				C11EC93D1AA5770900E289C0 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-		};
 		C1F153231A9C7BE8009779D2 /* Build configuration list for PBXProject "jedisocks" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
