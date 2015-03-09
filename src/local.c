@@ -434,14 +434,15 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
             // received the first SOCKS5 request = in stage 0
             if (verbose)  LOGD("%ld bytes read\n", nread);
             total_read += nread;
-            write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
             char socks_first_req[SOCKS5_FISRT_REQ_SIZE] = {0x05,0x01,0x00}; // refer to SOCKS5 protocol
             method_select_response_t *socks_first_resp = malloc(sizeof(method_select_response_t));
             socks_first_resp->ver = SVERSION;
             socks_first_resp->method = HEXZERO;
             int r = memcmp(socks_first_req, buf->base, SOCKS5_FISRT_REQ_SIZE);
-            if (r == 0)
-                LOGD("Received a socks5 request");
+            if (r)
+                LOGD("Not a SOCKS5 request, drop n close");
+            
+            write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
             wr->req.data = socks_hsctx;
             wr->buf =  uv_buf_init((char*)socks_first_resp, sizeof(method_select_response_t));
             uv_write(&wr->req, client, &wr->buf, 1 /*nbufs*/, socks_write_cb);
