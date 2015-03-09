@@ -367,7 +367,7 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
         if (socks_hsctx->stage == 2) {
             if (!socks_hsctx->init) {
                 socks_hsctx->init = 1;
-                socks_hsctx->session_id = ++s_id;
+                socks_hsctx->session_id = ++socks_hsctx->remote_long->sid;
                 insert_c_map (socks_hsctx->remote_long->idfd_map, &socks_hsctx->session_id, sizeof(int), socks_hsctx, sizeof(int));
                 if (s_id == INT_MAX)
                     s_id = 0;
@@ -477,7 +477,7 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
             socks5_req_or_resp_t* resp = calloc(1, sizeof(socks5_req_or_resp_t));
             memcpy(resp, req, sizeof(socks5_req_or_resp_t) - 4);  // only copy the first 4 bytes to save time
             resp->cmd_or_resp = REP_OK;
-            resp->atyp = socks_hsctx->atyp;
+            resp->atyp = 1;
             write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
             wr->req.data = socks_hsctx;
             wr->buf = uv_buf_init((char*)resp, sizeof(socks5_req_or_resp_t));
