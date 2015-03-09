@@ -67,16 +67,18 @@ static void send_EOF_packet(socks_handshake_t* socks_hsctx, remote_ctx_t* remote
     uint32_t session_id = htonl((uint32_t)socks_hsctx->session_id);
     uint16_t datalen = 0;
     char rsv = CTL_CLOSE;
-    pkt_maker(pkt_buf, &session_id, ID_LEN, offset);
+    
+    set_header(pkt_buf, &session_id, ID_LEN, offset);
+    set_header(pkt_buf, &rsv, RSV_LEN, offset);
+    set_header(pkt_buf, &datalen, DATALEN_LEN, offset);
+    
     //LOGD("session_id = %d session_idno = %d", ctx->session_id, session_id);
-    pkt_maker(pkt_buf, &rsv, RSV_LEN, offset);
-    pkt_maker(pkt_buf, &datalen, DATALEN_LEN, offset);
+
     write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
     wr->req.data = socks_hsctx;
     wr->buf = uv_buf_init(pkt_buf, EXP_TO_RECV_LEN);
     uv_write(&wr->req, (uv_stream_t*)&remote_ctx->remote, &wr->buf, 1, socks_write_cb);
 }
-
 
 // this will cause corruption because remote_ctx_long is not existed.
 static void socks_after_close_cb(uv_handle_t* handle) {
@@ -86,7 +88,7 @@ static void socks_after_close_cb(uv_handle_t* handle) {
         if (socks_hsctx->remote_long != NULL)
             send_EOF_packet(socks_hsctx, socks_hsctx->remote_long);
         socks_hsctx->closed++;
-        if (socks_hsctx == 2) {
+        if (socks_hsctx->closed == 2) {
             LOGD("session %d is removed from session map and ctx is freed", socks_hsctx->session_id);
             // add a comment
             if (socks_hsctx->remote_long != NULL)
@@ -183,11 +185,11 @@ static void remote_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *b
         // TODO: fix the expected to recv buffer size
         if (ctx->stage == 0) {
             if (ctx->buf_len == HDR_LEN) {
-                pkt_access(&ctx->tmp_packet.session_id, ctx->packet_buf, ID_LEN, ctx->offset);
+                get_header(&ctx->tmp_packet.session_id, ctx->packet_buf, ID_LEN, ctx->offset);
                 ctx->tmp_packet.session_id = ntohl((uint32_t)ctx->tmp_packet.session_id);
                 LOGD("session_id = %d\n", ctx->tmp_packet.session_id);
-                pkt_access(&ctx->tmp_packet.rsv, ctx->packet_buf, RSV_LEN, ctx->offset);
-                pkt_access(&ctx->tmp_packet.datalen, ctx->packet_buf, DATALEN_LEN, ctx->offset);
+                get_header(&ctx->tmp_packet.rsv, ctx->packet_buf, RSV_LEN, ctx->offset);
+                get_header(&ctx->tmp_packet.datalen, ctx->packet_buf, DATALEN_LEN, ctx->offset);
                 ctx->tmp_packet.datalen = ntohs((uint16_t)ctx->tmp_packet.datalen);
                 if (verbose) LOGD("datalen = %d\n", ctx->tmp_packet.datalen);
                 ctx->expect_to_recv = ctx->tmp_packet.datalen;
@@ -234,7 +236,7 @@ static void remote_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *b
                 if (find_c_map(ctx->idfd_map, &ctx->tmp_packet.session_id, &socks))
                 {
                     socks->response = malloc(ctx->tmp_packet.datalen);
-                    pkt_access(socks->response, ctx->packet_buf, ctx->tmp_packet.datalen, ctx->offset);
+                    get_payload(socks->response, ctx->packet_buf, ctx->tmp_packet.datalen, ctx->offset);
                     write_req_t* wr = malloc(sizeof(write_req_t));
                     wr->req.data = socks;
                     wr->buf = uv_buf_init(socks->response, ctx->tmp_packet.datalen);
@@ -381,15 +383,15 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
                 char rsv = CTL_INIT;
                 uint32_t id_to_send = htonl((uint32_t)(socks_hsctx->session_id));
                 uint16_t datalen_to_send = htons((uint16_t)(ATYP_LEN + ADDRLEN_LEN + socks_hsctx->addrlen + PORT_LEN + nread));
-                pkt_maker(pkt_buf, &id_to_send, ID_LEN, offset);
-                pkt_maker(pkt_buf, &rsv, RSV_LEN, offset);
-                pkt_maker(pkt_buf, &datalen_to_send, DATALEN_LEN, offset);
-                pkt_maker(pkt_buf, &socks_hsctx->atyp, ATYP_LEN, offset);
+                set_header(pkt_buf, &id_to_send, ID_LEN, offset);
+                set_header(pkt_buf, &rsv, RSV_LEN, offset);
+                set_header(pkt_buf, &datalen_to_send, DATALEN_LEN, offset);
+                set_header(pkt_buf, &socks_hsctx->atyp, ATYP_LEN, offset);
                 LOGD("pkt_maker atyp %d", socks_hsctx->atyp);
-                pkt_maker(pkt_buf, &socks_hsctx->addrlen, ADDRLEN_LEN, offset);
-                pkt_maker(pkt_buf, &socks_hsctx->host, socks_hsctx->addrlen, offset);
-                pkt_maker(pkt_buf, &socks_hsctx->port, PORT_LEN, offset);
-                pkt_maker(pkt_buf, buf->base, nread, offset);
+                set_header(pkt_buf, &socks_hsctx->addrlen, ADDRLEN_LEN, offset);
+                set_header(pkt_buf, &socks_hsctx->host, socks_hsctx->addrlen, offset);
+                set_header(pkt_buf, &socks_hsctx->port, PORT_LEN, offset);
+                set_payload(pkt_buf, buf->base, nread, offset);
                 //SHOW_BUFFER(pkt_buf, nread);
                 if (verbose) LOGD("now here is buf\n");
                 if (verbose) SHOW_BUFFER(buf->base, ID_LEN + RSV_LEN + DATALEN_LEN + ATYP_LEN \
@@ -414,13 +416,13 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
                 char* pkt_buf = calloc(1, ID_LEN + RSV_LEN + DATALEN_LEN + nread);
                 packet_t* pkt = calloc(1, sizeof(packet_t));
                 pkt->rawpacket = pkt_buf;
-                char rsv = 0x00;
+                char rsv = CTL_NORMAL;
                 uint32_t id_to_send = ntohl((uint32_t)(socks_hsctx->session_id));
                 uint16_t datalen_to_send = ntohs((uint16_t)nread);
-                pkt_maker(pkt_buf, &id_to_send, ID_LEN, offset);
-                pkt_maker(pkt_buf, &rsv, RSV_LEN, offset);
-                pkt_maker(pkt_buf, &datalen_to_send, DATALEN_LEN, offset);
-                pkt_maker(pkt_buf, buf->base, nread, offset);
+                set_header(pkt_buf, &id_to_send, ID_LEN, offset);
+                set_header(pkt_buf, &rsv, RSV_LEN, offset);
+                set_header(pkt_buf, &datalen_to_send, DATALEN_LEN, offset);
+                set_header(pkt_buf, buf->base, nread, offset);
                 if (verbose) SHOW_BUFFER(pkt_buf, nread);
                 
                 // to add a pointer to refer to long remote connection
@@ -437,7 +439,7 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
             if (verbose)  LOGD("%ld bytes read\n", nread);
             total_read += nread;
             write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
-            char socks_first_req[SOCKS5_FISRT_REQ_SIZE] = {0x05,0x01,0x00};
+            char socks_first_req[SOCKS5_FISRT_REQ_SIZE] = {0x05,0x01,0x00}; // refer to SOCKS5 protocol
             method_select_response_t *socks_first_resp = malloc(sizeof(method_select_response_t));
             socks_first_resp->ver = SVERSION;
             socks_first_resp->method = HEXZERO;
@@ -455,31 +457,31 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
             // here we have to parse the requested domain or ip address, then we store it in hsctx
             socks5_req_or_resp_t* req = (socks5_req_or_resp_t*)buf->base;
             char* addr_ptr = &req->atyp + 1;
-            if (req->atyp == 0x01) {
+            if (req->atyp == ATYP_IPV4) {
                 
                 // client requests a ipv4 address
-                socks_hsctx->atyp = 1;
+                socks_hsctx->atyp = ATYP_IPV4;
                 socks_hsctx->addrlen = 4;
                 memcpy(socks_hsctx->host, addr_ptr, 4);  // ipv4 copied
                 addr_ptr += 4;
                 memcpy(socks_hsctx->port, addr_ptr, 2);  // port copied in network order
 //                uint16_t p = ntohs(*(uint16_t *)(socks_hsctx->port));
 
-            } else if (req->atyp == 3){
+            } else if (req->atyp == ATYP_DOMAIN){
                 if (verbose) LOGD("atyp == 3\n");
-                socks_hsctx->atyp = 3;
+                socks_hsctx->atyp = ATYP_DOMAIN;
                 socks_hsctx->addrlen = *(addr_ptr++);
                 memcpy(socks_hsctx->host, addr_ptr, socks_hsctx->addrlen);      // domain name copied
                 addr_ptr += socks_hsctx->addrlen;
                 memcpy(socks_hsctx->port, addr_ptr, 2);                         // port copied
 //                uint16_t p = ntohs(*(uint16_t *)(socks_hsctx->port));           //conv to host order
             } else
-                LOGD("unexpected atyp");
+                LOGD("ERROR: unexpected atyp");
 
             socks5_req_or_resp_t* resp = calloc(1, sizeof(socks5_req_or_resp_t));
             memcpy(resp, req, sizeof(socks5_req_or_resp_t) - 4);  // only copy the first 4 bytes to save time
-            resp->cmd_or_resp = 0;
-            resp->atyp = 1;
+            resp->cmd_or_resp = REP_OK;
+            resp->atyp = socks_hsctx->atyp;
             write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
             wr->req.data = socks_hsctx;
             wr->buf = uv_buf_init((char*)resp, sizeof(socks5_req_or_resp_t));

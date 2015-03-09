@@ -23,10 +23,11 @@
 #ifndef _SOCKS5_H
 #define _SOCKS5_H
 
+#define REP_OK 0
 #define SVERSION 0x05
 #define CONNECT 0x01
-#define IPV4 0x01
-#define DOMAIN 0x03
+#define ATYP_IPV4 0x01
+#define ATYP_DOMAIN 0x03
 #define IPV6 0x04
 #define CMD_NOT_SUPPORTED 0x07
 #define HEXZERO 0x00
