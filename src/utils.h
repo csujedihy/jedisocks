@@ -118,6 +118,51 @@ pkt_access((dest), (src), (len), (offset)); \
 (ctx)->packet.session_id = ntohl((uint32_t)ctx->packet.session_id); \
 } while(0)
 
+// built-in link list MACROs, originated from libcork
+#define list_init(list) \
+do { \
+(list)->head.next = &(list)->head; \
+(list)->head.prev = &(list)->head; \
+} while (0)
+
+#define list_add_after(prev, elem) \
+do { \
+(elem)->prev = (prev); \
+(elem)->next = (prev)->next; \
+(prev)->next->prev = (elem); \
+(prev)->next = (elem); \
+} while (0)
+
+#define list_add_before(succ, elem) \
+do { \
+(elem)->prev = (succ)->prev; \
+(elem)->next = (succ); \
+(succ)->prev->next = (elem); \
+(succ)->prev = (elem); \
+} while (0)
+
+#define list_add_to_tail(list, elem) \
+list_add_before(&(list)->head, elem);
+
+#define list_add_to_head(list, elem) \
+list_add_after(&(list)->head, elem);
+
+#define list_get_head_elem(list) \
+(((list)->head.next == &(list)->head)? NULL: (list)->head.next)
+
+#define list_remove_elem(elem) \
+do { \
+(elem)->prev->next = (elem)->next; \
+(elem)->next->prev = (elem)->prev; \
+} while (0)
+
+#define list_get_start(list) \
+((list)->head.next)
+
+#define list_elem_is_end(list, element) \
+((element) == &(list)->head)
+
+
 void usage();
 
 #endif

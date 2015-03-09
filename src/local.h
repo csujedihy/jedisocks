@@ -2,15 +2,12 @@
 #define LOCAL_H_
 #include "c_map.h"
 
-
-// SOCKS5 negotiation related MACROs
-#define SOCKS5_FISRT_REQ_SIZE 3
-#define SOCKS5_FISRT_RESP_SIZE 2
 #define INT_MAX 2147483647
 #define BUF_SIZE 2048
+#define CTL_CLOSE 0x04
 
 // packet related MACROs
-#define MAX_PKT_SIZE 81920
+#define MAX_PKT_SIZE 8192
 #define ID_LEN 4
 #define PKT_LEN 2
 #define RSV_LEN 1
@@ -25,52 +22,6 @@
 #define RC_OFF 0
 #define RC_ESTABLISHING 1
 #define RC_OK 2
-
-
-
-// built-in link list MACROs, originated from libcork
-#define list_init(list) \
-do { \
-(list)->head.next = &(list)->head; \
-(list)->head.prev = &(list)->head; \
-} while (0)
-
-#define list_add_after(prev, elem) \
-do { \
-(elem)->prev = (prev); \
-(elem)->next = (prev)->next; \
-(prev)->next->prev = (elem); \
-(prev)->next = (elem); \
-} while (0)
-
-#define list_add_before(succ, elem) \
-do { \
-(elem)->prev = (succ)->prev; \
-(elem)->next = (succ); \
-(succ)->prev->next = (elem); \
-(succ)->prev = (elem); \
-} while (0)
-
-#define list_add_to_tail(list, elem) \
-list_add_before(&(list)->head, elem);
-
-#define list_add_to_head(list, elem) \
-list_add_after(&(list)->head, elem);
-
-#define list_get_head_elem(list) \
-(((list)->head.next == &(list)->head)? NULL: (list)->head.next)
-
-#define list_remove_elem(elem) \
-do { \
-    (elem)->prev->next = (elem)->next; \
-    (elem)->next->prev = (elem)->prev; \
-} while (0)
-
-#define list_get_start(list) \
-((list)->head.next)
-
-#define list_elem_is_end(list, element) \
-((element) == &(list)->head)
 
 int compare_id (void* left, void* right) {
     if (*(uint32_t*)left == *(uint32_t*)right)

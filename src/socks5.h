@@ -30,6 +30,8 @@
 #define IPV6 0x04
 #define CMD_NOT_SUPPORTED 0x07
 #define HEXZERO 0x00
+#define SOCKS5_FISRT_REQ_SIZE 3
+#define SOCKS5_FISRT_RESP_SIZE 2
 
 #pragma pack(1)
 

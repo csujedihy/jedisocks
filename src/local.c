@@ -60,10 +60,10 @@ static void remote_after_close_cb(uv_handle_t* handle) {
 
 static void send_EOF_packet(socks_handshake_t* socks_hsctx, remote_ctx_t* remote_ctx) {
     int offset = 0;
-    char* pkt_buf = malloc(EXP_TO_RECV_LEN);
+    char* pkt_buf = malloc(HDR_LEN);
     uint32_t session_id = htonl((uint32_t)socks_hsctx->session_id);
     uint16_t datalen = 0;
-    char rsv = 0x04;
+    char rsv = CTL_CLOSE;
     pkt_maker(pkt_buf, &session_id, ID_LEN, offset);
     //LOGD("session_id = %d session_idno = %d", ctx->session_id, session_id);
     pkt_maker(pkt_buf, &rsv, RSV_LEN, offset);
@@ -133,14 +133,14 @@ static void remote_exception(remote_ctx_t* remote_ctx) {
     fprintf(stderr, "remote_exception captured\n");
     uv_read_stop((uv_stream_t *)&remote_ctx->remote);
     if (!uv_is_closing((uv_handle_t*)&remote_ctx->remote)) {
-        struct clib_iterator *socks_map_itr;
-        struct clib_object *elem;
+        struct clib_iterator *socks_map_itr = NULL;
+        struct clib_object *elem = NULL;
         socks_handshake_t* socks_hsctx = NULL;
         
         /* traverse the whole map to stop SOCKS5 reading bufs*/
         socks_map_itr = new_iterator_c_map (remote_ctx->idfd_map);
         elem  = socks_map_itr->get_next(socks_map_itr);
-        while ( elem ) {
+        while (elem) {
             socks_hsctx = (socks_handshake_t*)socks_map_itr->get_value(elem);
             elem = socks_map_itr->get_next(socks_map_itr);
             if (socks_hsctx != NULL) {
@@ -153,7 +153,6 @@ static void remote_exception(remote_ctx_t* remote_ctx) {
             }
         }
         delete_iterator_c_map(socks_map_itr);
-        
         uv_close((uv_handle_t*) &remote_ctx->remote, remote_after_close_cb);
     }
 }
@@ -182,7 +181,7 @@ static void remote_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *b
 
         // TODO: fix the expected to recv buffer size
         if (ctx->stage == 0) {
-            if (ctx->buf_len == EXP_TO_RECV_LEN) {
+            if (ctx->buf_len == HDR_LEN) {
                 pkt_access(&ctx->tmp_packet.session_id, ctx->packet_buf, ID_LEN, ctx->offset);
                 ctx->tmp_packet.session_id = ntohl((uint32_t)ctx->tmp_packet.session_id);
                 LOGD("session_id = %d\n", ctx->tmp_packet.session_id);
@@ -192,10 +191,10 @@ static void remote_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *b
                 if (verbose) LOGD("datalen = %d\n", ctx->tmp_packet.datalen);
                 ctx->expect_to_recv = ctx->tmp_packet.datalen;
                 ctx->stage = 1;
-                if (ctx->tmp_packet.rsv == 0x04) {
+                if (ctx->tmp_packet.rsv == CTL_CLOSE) {
                     ctx->reset = 0;
-                    ctx->expect_to_recv = EXP_TO_RECV_LEN;
-                    LOGD("received a 0x04 packet -- session in js-server is closed");
+                    ctx->expect_to_recv = HDR_LEN;
+                    LOGD("received a CTL_CLOSE(0x04) packet -- session in js-server is closed");
                     socks_handshake_t* exist_ctx = NULL;
                     if (find_c_map(ctx->idfd_map, &ctx->tmp_packet.session_id, &exist_ctx))
                     {
@@ -222,12 +221,12 @@ static void remote_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *b
             }
             else{
                 LOGD("< header length... gather more");
-                ctx->expect_to_recv = EXP_TO_RECV_LEN - ctx->buf_len;
+                ctx->expect_to_recv = HDR_LEN - ctx->buf_len;
                 return;
             }
         
         } else if (ctx->stage == 1) {
-            if (ctx->buf_len == EXP_TO_RECV_LEN + ctx->tmp_packet.datalen) {
+            if (ctx->buf_len == HDR_LEN + ctx->tmp_packet.datalen) {
                 ctx->reset = 0;
                 if (verbose)  LOGD("data enough\n");
                 socks_handshake_t* socks = NULL;
@@ -246,10 +245,10 @@ static void remote_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *b
                     LOGD("found nothing in the map\n");
                     //assert(0);
                 }
-                ctx->expect_to_recv = EXP_TO_RECV_LEN;
-            } else if (ctx->buf_len < EXP_TO_RECV_LEN + ctx->tmp_packet.datalen) {
+                ctx->expect_to_recv = HDR_LEN;
+            } else if (ctx->buf_len < HDR_LEN + ctx->tmp_packet.datalen) {
                 LOGD("< datalen... gather more");
-                ctx->expect_to_recv = EXP_TO_RECV_LEN + ctx->tmp_packet.datalen - ctx->buf_len;
+                ctx->expect_to_recv = HDR_LEN + ctx->tmp_packet.datalen - ctx->buf_len;
                 return;
             } else {
                 LOGD("impossible! should never reach here (> datalen)\n");
@@ -389,7 +388,7 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
                 pkt_maker(pkt_buf, &rsv, RSV_LEN, offset);
                 pkt_maker(pkt_buf, &datalen_to_send, DATALEN_LEN, offset);
                 pkt_maker(pkt_buf, &socks_hsctx->atyp, ATYP_LEN, offset);
-                LOGD("pkt_maker atyp %d", (char)*(pkt_buf + offset - 1));
+                LOGD("pkt_maker atyp %d", socks_hsctx->atyp);
                 pkt_maker(pkt_buf, &socks_hsctx->addrlen, ADDRLEN_LEN, offset);
                 pkt_maker(pkt_buf, &socks_hsctx->host, socks_hsctx->addrlen, offset);
                 pkt_maker(pkt_buf, &socks_hsctx->port, PORT_LEN, offset);
@@ -467,7 +466,7 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
                 memcpy(socks_hsctx->host, addr_ptr, 4);  // ipv4 copied
                 addr_ptr += 4;
                 memcpy(socks_hsctx->port, addr_ptr, 2);  // port copied in network order
-                uint16_t p = ntohs(*(uint16_t *)(socks_hsctx->port));
+//                uint16_t p = ntohs(*(uint16_t *)(socks_hsctx->port));
 
             } else if (req->atyp == 3){
                 if (verbose) LOGD("atyp == 3\n");
@@ -476,7 +475,7 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
                 memcpy(socks_hsctx->host, addr_ptr, socks_hsctx->addrlen);      // domain name copied
                 addr_ptr += socks_hsctx->addrlen;
                 memcpy(socks_hsctx->port, addr_ptr, 2);                         // port copied
-                uint16_t p = ntohs(*(uint16_t *)(socks_hsctx->port));           //conv to host order
+//                uint16_t p = ntohs(*(uint16_t *)(socks_hsctx->port));           //conv to host order
             } else
                 LOGD("unexpected atyp");
 

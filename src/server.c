@@ -49,7 +49,7 @@ static void send_EOF_packet(remote_ctx_t* ctx){
     uint32_t session_id = htonl((uint32_t)ctx->session_id);
     LOGD("the session id of the closing session is %d", ctx->session_id);
     uint16_t datalen = 0;
-    char rsv = 0x04;
+    char rsv = CTL_CLOSE;
     pkt_maker(pkt_buf, &session_id, ID_LEN, offset);
     //LOGD("session_id = %d session_idno = %d", ctx->session_id, session_id);
     pkt_maker(pkt_buf, &rsv, RSV_LEN, offset);
@@ -323,10 +323,10 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
                 LOGD("session id = %d RSV = %d", ctx->packet.session_id, ctx->packet.rsv);
                 ctx->stage = 1; 
                 // check packet's RSV, see if this packet has control info.
-                // 0x04 means peer wanted to close this session -> FIN
+                // CTL_CLOSE means peer wanted to close this session -> FIN
                 // peer has to make sure no more data issued on this session 
-                if (ctx->packet.rsv == 0x04) {
-                    LOGD("received a packet with 0x04");
+                if (ctx->packet.rsv == CTL_CLOSE) {
+                    LOGD("received a packet with CTL_CLOSE (0x04)");
                     LOGD("session id = %d", ctx->packet.session_id);
                     remote_ctx_t* exist_ctx = NULL;
                     if (remove_c_map(ctx->idfd_map, &ctx->packet.session_id, &exist_ctx)) {

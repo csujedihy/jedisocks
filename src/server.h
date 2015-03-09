@@ -1,8 +1,8 @@
 #ifndef SERVER_H_
 #define SERVER_H_
-#define BUF_SIZE 2048
 #include "c_map.h"
 
+#define BUF_SIZE 2048
 #define MAX_PKT_SIZE 8192
 #define EXP_TO_RECV_LEN (ID_LEN + RSV_LEN + DATALEN_LEN)
 #define ID_LEN 4
@@ -48,51 +48,12 @@ ctx->reset = 1; \
 
 #define SHOWPKTDEBUGWODATA(remote_ctx) LOGD("session_id=%d, rsv=%d, datalen=%d, atyp=%d, addrlen=%d, host=%s, port=%d",remote_ctx->packet->session_id, remote_ctx->packet->rsv, remote_ctx->packet->datalen, remote_ctx->packet->atyp, remote_ctx->packet->addrlen, remote_ctx->packet->host, ntohs(*(uint16_t*)remote_ctx->packet->port))
 
-// built-in link list MACROs, modified from libcork
-#define list_init(list) \
-do { \
-(list)->head.next = &(list)->head; \
-(list)->head.prev = &(list)->head; \
-} while (0)
-
-#define list_add_after(prev, elem) \
-do { \
-(elem)->prev = (prev); \
-(elem)->next = (prev)->next; \
-(prev)->next->prev = (elem); \
-(prev)->next = (elem); \
-} while (0)
-
-#define list_add_before(succ, elem) \
-do { \
-(elem)->prev = (succ)->prev; \
-(elem)->next = (succ); \
-(succ)->prev->next = (elem); \
-(succ)->prev = (elem); \
-} while (0)
-
-#define list_add_to_tail(list, elem) \
-list_add_before(&(list)->head, elem);
-
-#define list_add_to_head(list, elem) \
-list_add_after(&(list)->head, elem);
-
-#define list_get_head_elem(list) \
-(((list)->head.next == &(list)->head)? NULL: (list)->head.next)
-
-#define list_remove_elem(elem) \
-do { \
-(elem)->prev->next = (elem)->next; \
-(elem)->next->prev = (elem)->prev; \
-} while (0)
 
 int compare_id (void* left, void* right) {
     if (*(uint32_t*)left == *(uint32_t*)right)
         return 0;
     return *(uint32_t*)left < *(uint32_t*)right? -1:1;
 }
-
-
 
 typedef struct packet {
     uint32_t session_id;
