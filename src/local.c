@@ -11,6 +11,7 @@
 #include "socks5.h"
 #include "c_map.h"
 
+// callback functions
 static void socks_handshake_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t *buf);
 static void socks_handshake_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf);
 static void socks_write_cb(uv_write_t* req, int status);
@@ -19,13 +20,15 @@ static void remote_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
 static void remote_write_cb(uv_write_t *req, int status);
 static void socks_after_shutdown_cb(uv_shutdown_t* req, int status);
 static void socks_after_close_cb(uv_handle_t* handle);
-static void send_EOF_packet(socks_handshake_t* socks_hsctx, remote_ctx_t* remote_ctx);
 static void connect_to_remote_cb(uv_connect_t* req, int status);
 static void socks_accept_cb(uv_stream_t *server, int status);
 static void remote_after_close_cb(uv_handle_t* handle);
-static void remote_on_connect(uv_connect_t* req, int status);
+static void connect_to_remote_cb(uv_connect_t* req, int status);
+
+// customized functions
 static remote_ctx_t* create_new_long_connection(server_ctx_t* listener);
 static void remote_exception(remote_ctx_t* remote_ctx);
+static void send_EOF_packet(socks_handshake_t* socks_hsctx, remote_ctx_t* remote_ctx);
 
 int verbose = 0;
 int total_read;
@@ -72,7 +75,6 @@ static void send_EOF_packet(socks_handshake_t* socks_hsctx, remote_ctx_t* remote
     wr->req.data = socks_hsctx;
     wr->buf = uv_buf_init(pkt_buf, EXP_TO_RECV_LEN);
     uv_write(&wr->req, (uv_stream_t*)&remote_ctx->remote, &wr->buf, 1, socks_write_cb);
-
 }
 
 
@@ -139,7 +141,7 @@ static void remote_exception(remote_ctx_t* remote_ctx) {
         
         /* traverse the whole map to stop SOCKS5 reading bufs*/
         socks_map_itr = new_iterator_c_map (remote_ctx->idfd_map);
-        elem  = socks_map_itr->get_next(socks_map_itr);
+        elem = socks_map_itr->get_next(socks_map_itr);
         while (elem) {
             socks_hsctx = (socks_handshake_t*)socks_map_itr->get_value(elem);
             elem = socks_map_itr->get_next(socks_map_itr);
@@ -149,7 +151,6 @@ static void remote_exception(remote_ctx_t* remote_ctx) {
                 uv_shutdown_t *req = malloc(sizeof(uv_shutdown_t));
                 req->data = socks_hsctx;
                 uv_shutdown(req, (uv_stream_t*)&socks_hsctx->server, socks_after_shutdown_cb);
-            
             }
         }
         delete_iterator_c_map(socks_map_itr);
@@ -172,8 +173,8 @@ static void remote_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *b
             memset(ctx->packet_buf, 0, MAX_PKT_SIZE);
             memset(&ctx->tmp_packet, 0, sizeof(tmp_packet_t));
             ctx->stage = 0;
-            
         }
+        
         if (verbose) LOGD("buf_len before = %d\n", ctx->buf_len);
         memcpy(ctx->packet_buf + ctx->buf_len, buf->base, nread);  // copy current buf to packet_buf
         ctx->buf_len += nread;  // record how much data we put in the packet_buf
@@ -340,14 +341,10 @@ static void socks_accept_cb(uv_stream_t *server, int status) {
         try_to_connect_remote(listener->remote_long);
         socks_hsctx->remote_long = listener->remote_long;
     }
-
 }
 
 static void socks_handshake_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t *buf) {
     *buf = uv_buf_init((char*) malloc(BUF_SIZE), BUF_SIZE);
-    
-    // problem may be here
-    
     assert(buf->base != NULL);
 }
 
@@ -381,7 +378,7 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
                                         + socks_hsctx->addrlen + PORT_LEN + nread);
                 packet_t* pkt = calloc(1, sizeof(packet_t));
                 pkt->rawpacket = pkt_buf;
-                char rsv = 0x01;
+                char rsv = CTL_INIT;
                 uint32_t id_to_send = htonl((uint32_t)(socks_hsctx->session_id));
                 uint16_t datalen_to_send = htons((uint16_t)(ATYP_LEN + ADDRLEN_LEN + socks_hsctx->addrlen + PORT_LEN + nread));
                 pkt_maker(pkt_buf, &id_to_send, ID_LEN, offset);

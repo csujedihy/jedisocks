@@ -15,33 +15,39 @@ int verbose = 0;
 FILE * logfile = NULL;
 int log_to_file = 0;
 
+// callback functions
 static void remote_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t *buf);
 static void remote_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf);
 static void server_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t *buf);
 static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf);
 static void remote_write_cb(uv_write_t *req, int status);
-static void remote_close(uv_handle_t *handle);
 static void remote_after_shutdown_cb(uv_shutdown_t* req, int status);
 static void remote_after_close_cb(uv_handle_t* handle);
-static int try_to_close(uv_stream_t *stream);
-static void remote_addr_resolved(uv_getaddrinfo_t *resolver, int status, struct addrinfo *res);
-static void remote_on_connect(uv_connect_t* req, int status);
+static void remote_addr_resolved_cb(uv_getaddrinfo_t *resolver, int status, struct addrinfo *res);
+static void remote_on_connect_cb(uv_connect_t* req, int status);
 static void server_write_cb(uv_write_t *req, int status);
+
+// customized functions
+static int try_to_close(uv_stream_t *stream);
+static void remote_close(uv_handle_t *handle);
 static void send_EOF_packet(remote_ctx_t* ctx);
 
+#ifdef MEMDEBUG
 void* jmalloc(size_t size) {
     static int malloc_count = 0;
     malloc_count++;
-//    fprintf(stderr, "malloc a memory , count %d\n", malloc_count);
     return malloc(size);
 }
 
 void jfree(void * ptr) {
     static int free_count = 0;
     free_count++;
-//    fprintf(stderr, "free a memory, count %d\n", free_count);
     free(ptr);
 }
+#else
+#define jmalloc malloc
+#define jfree free
+#endif
 
 static void send_EOF_packet(remote_ctx_t* ctx){
     int offset = 0;
@@ -50,10 +56,13 @@ static void send_EOF_packet(remote_ctx_t* ctx){
     LOGD("the session id of the closing session is %d", ctx->session_id);
     uint16_t datalen = 0;
     char rsv = CTL_CLOSE;
-    pkt_maker(pkt_buf, &session_id, ID_LEN, offset);
+    
+    set_header(pkt_buf, &session_id, ID_LEN, offset);
+    set_header(pkt_buf, &rsv, RSV_LEN, offset);
+    set_header(pkt_buf, &datalen, DATALEN_LEN, offset);
+    
     //LOGD("session_id = %d session_idno = %d", ctx->session_id, session_id);
-    pkt_maker(pkt_buf, &rsv, RSV_LEN, offset);
-    pkt_maker(pkt_buf, &datalen, DATALEN_LEN, offset);
+
     write_req_t *wr = (write_req_t*) jmalloc(sizeof(write_req_t));
     wr->req.data = ctx;
     wr->buf = uv_buf_init(pkt_buf, EXP_TO_RECV_LEN);
@@ -109,20 +118,20 @@ static void remote_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
         //now handle remote close
         // for debug
     } else if (nread > 0) {
-//      LOGD("remote_read_cb.buf = %s\n", buf->base);
         server_ctx_t* server_ctx = ctx->server_ctx;
         int offset = 0;
         char* pkt_buf = calloc(1, ID_LEN + RSV_LEN + DATALEN_LEN + nread);
         uint32_t session_id = htonl((uint32_t)ctx->session_id);
         uint16_t datalen = htons((uint16_t)nread);
-        pkt_maker(pkt_buf, &session_id, ID_LEN, offset);
-        //LOGD("session_id = %d session_idno = %d", ctx->session_id, session_id);
-        char rsv = 0;
-        pkt_maker(pkt_buf, &rsv, RSV_LEN, offset);
-        pkt_maker(pkt_buf, &datalen, DATALEN_LEN, offset);
+        set_header(pkt_buf, &session_id, ID_LEN, offset);
+        char rsv = CTL_NORMAL;
+        
+        set_header(pkt_buf, &rsv, RSV_LEN, offset);
+        set_header(pkt_buf, &datalen, DATALEN_LEN, offset);
+        set_payload(pkt_buf, buf->base, nread, offset);
+        
         //LOGD("datalen(nread) = %d datalenno = %d", nread, datalen);
 
-        pkt_maker(pkt_buf, buf->base, nread, offset);
         write_req_t* req = calloc(1,sizeof(write_req_t));
         req->req.data = ctx;
         req->buf = uv_buf_init(pkt_buf, ID_LEN + RSV_LEN + DATALEN_LEN + nread);
@@ -195,7 +204,7 @@ static void remote_write_cb(uv_write_t *req, int status) {
 }
 
 // TODO: add timer to watch remote connection in case of TCP or HTTP timeout
-static void remote_on_connect(uv_connect_t* req, int status) {
+static void remote_on_connect_cb(uv_connect_t* req, int status) {
     remote_ctx_t* ctx = (remote_ctx_t*)req->data;
     if (status) {
         LOGD("error in remote_on_connect");
@@ -234,10 +243,10 @@ static int try_to_connect_remote(remote_ctx_t* ctx) {
     uv_tcp_init(loop, &ctx->remote);
     ctx->remote.data = ctx; // is redundant?
     remote_conn_req->data = ctx;
-    return uv_tcp_connect(remote_conn_req, &ctx->remote, (struct sockaddr*)&remote_addr, remote_on_connect);
+    return uv_tcp_connect(remote_conn_req, &ctx->remote, (struct sockaddr*)&remote_addr, remote_on_connect_cb);
 }
 
-static void remote_addr_resolved(uv_getaddrinfo_t *resolver, int status, struct addrinfo *res) {
+static void remote_addr_resolved_cb(uv_getaddrinfo_t *resolver, int status, struct addrinfo *res) {
     remote_ctx_t* ctx = (remote_ctx_t*) resolver->data;
     if (status) {
         LOGD("error DNS resolve ");
@@ -315,9 +324,9 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
                 LOGD("stage = 0");
                 LOGD("3: buf_len = %d, reset = %d, stage = %d, expect_to_recv %d", ctx->buf_len, ctx->reset, ctx->stage, ctx->expect_to_recv);
 
-                pkt_access_sid(ctx, &ctx->packet.session_id, ctx->packet_buf, ID_LEN, ctx->packet.offset);
-                pkt_access(&ctx->packet.rsv, ctx->packet_buf, RSV_LEN, ctx->packet.offset);
-                pkt_access(&ctx->packet.datalen, ctx->packet_buf, DATALEN_LEN, ctx->packet.offset);
+                get_id(ctx, &ctx->packet.session_id, ctx->packet_buf, ID_LEN, ctx->packet.offset);
+                get_header(&ctx->packet.rsv, ctx->packet_buf, RSV_LEN, ctx->packet.offset);
+                get_header(&ctx->packet.datalen, ctx->packet_buf, DATALEN_LEN, ctx->packet.offset);
                 ctx->packet.datalen = ntohs((uint16_t)ctx->packet.datalen);
                 ctx->expect_to_recv = ctx->packet.datalen;
                 LOGD("session id = %d RSV = %d", ctx->packet.session_id, ctx->packet.rsv);
@@ -365,13 +374,13 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
                     if (exist_ctx == NULL)
                         LOGD("exist_ctx == NULL");
                     LOGD("server_read_cb: exist_ctx in session_id = %d, RSV = %d datalen = %d\n", ctx->packet.session_id, ctx->packet.rsv, ctx->packet.datalen);
-                    if (ctx->packet.rsv == 0x01)
+                    if (ctx->packet.rsv == CTL_INIT)
                         assert(0);
                     ctx->packet.payloadlen = ctx->packet.datalen;
                     packet_t* pkt_to_send = jmalloc(sizeof(packet_t));
                     memcpy(pkt_to_send, &ctx->packet, sizeof(packet_t));
                     pkt_to_send->data = jmalloc(ctx->packet.payloadlen);
-                    pkt_access(pkt_to_send->data, ctx->packet_buf, ctx->packet.payloadlen, ctx->packet.offset);
+                    get_header(pkt_to_send->data, ctx->packet_buf, ctx->packet.payloadlen, ctx->packet.offset);
                     LOGD("server_read_cb: (request)packet.data = \n%s\n",pkt_to_send->data);
                     LOG_SHOW_BUFFER(pkt_to_send->data, pkt_to_send->payloadlen);
                     list_add_to_tail(&exist_ctx->send_queue, pkt_to_send);
@@ -401,7 +410,7 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
                 }
                 else
                 {
-                    if (ctx->packet.rsv == 0x00)
+                    if (ctx->packet.rsv == CTL_NORMAL)
                     {
                         LOGD("385 return");
                         return;
@@ -410,17 +419,17 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
                     remote_ctx->server_ctx = ctx;
                     remote_ctx->remote.data = ctx;
                     list_init(&remote_ctx->send_queue);
-                    pkt_access(&ctx->packet.atyp, ctx->packet_buf, ATYP_LEN, ctx->packet.offset);
-                    pkt_access(&ctx->packet.addrlen, ctx->packet_buf, ADDRLEN_LEN, ctx->packet.offset);
+                    get_header(&ctx->packet.atyp, ctx->packet_buf, ATYP_LEN, ctx->packet.offset);
+                    get_header(&ctx->packet.addrlen, ctx->packet_buf, ADDRLEN_LEN, ctx->packet.offset);
                     remote_ctx->addrlen = ctx->packet.addrlen;
-                    pkt_access(remote_ctx->host, ctx->packet_buf, ctx->packet.addrlen, ctx->packet.offset);
-                    pkt_access(remote_ctx->port, ctx->packet_buf, PORT_LEN, ctx->packet.offset);
+                    get_header(remote_ctx->host, ctx->packet_buf, ctx->packet.addrlen, ctx->packet.offset);
+                    get_header(remote_ctx->port, ctx->packet_buf, PORT_LEN, ctx->packet.offset);
 //                  packet_payload_alloc(ctx->packet, FULLPKT);
                     ctx->packet.payloadlen = ctx->packet.datalen - (ATYP_LEN + ADDRLEN_LEN + ctx->packet.addrlen + PORT_LEN);
                     packet_t* pkt_to_send = jmalloc(sizeof(packet_t));
                     memcpy(pkt_to_send, &ctx->packet, sizeof(packet_t));
                     pkt_to_send->data = jmalloc(ctx->packet.payloadlen);
-                    pkt_access(pkt_to_send->data, ctx->packet_buf, ctx->packet.payloadlen, ctx->packet.offset);
+                    get_payload(pkt_to_send->data, ctx->packet_buf, ctx->packet.payloadlen, ctx->packet.offset);
                     //LOGD("(request)packet.data =\n%s", pkt_to_send->data);
                     remote_ctx->host[remote_ctx->addrlen] = '\0'; // put a EOF on domain name
                     remote_ctx->session_id = ctx->packet.session_id;
@@ -431,7 +440,7 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
                         uv_getaddrinfo_t* resolver = jmalloc(sizeof(uv_getaddrinfo_t));
                         // have to resolve domain name first
                         resolver->data = remote_ctx;
-                        int r = uv_getaddrinfo(loop, resolver, remote_addr_resolved, remote_ctx->host, NULL, NULL);
+                        int r = uv_getaddrinfo(loop, resolver, remote_addr_resolved_cb, remote_ctx->host, NULL, NULL);
                     }
                     else if (ctx->packet.atyp == 0x01)  // do not have to resolve ipv4 address
                     {

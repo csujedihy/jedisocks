@@ -4,6 +4,7 @@
 
 #define BUF_SIZE 2048
 #define MAX_PKT_SIZE 8192
+#define HDRLEN (ID_LEN + RSV_LEN + DATALEN_LEN)
 #define EXP_TO_RECV_LEN (ID_LEN + RSV_LEN + DATALEN_LEN)
 #define ID_LEN 4
 #define RSV_LEN 1
@@ -14,6 +15,8 @@
 #define FULLPKT 1
 #define SMALLPKT 0
 #define CTL_CLOSE 0x04
+#define CTL_INIT 0x01
+#define CTL_NORMAL 0
 
 #define packet_payload_alloc(packet, flag) \
 do { \

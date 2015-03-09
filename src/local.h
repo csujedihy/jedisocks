@@ -5,6 +5,7 @@
 #define INT_MAX 2147483647
 #define BUF_SIZE 2048
 #define CTL_CLOSE 0x04
+#define CTL_INIT 0x01
 
 // packet related MACROs
 #define MAX_PKT_SIZE 8192

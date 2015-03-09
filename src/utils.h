@@ -100,6 +100,11 @@ while (0)
                               } while (0)
 
 //packet related operations
+#define set_header pkt_maker
+#define set_payload pkt_maker
+#define get_header pkt_access
+#define get_payload pkt_access
+#define get_id pkt_access_sid
 #define pkt_maker(dest, src, len, offset) \
 do { \
 memcpy(dest + offset, src, len); \
