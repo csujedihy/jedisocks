@@ -1,15 +1,25 @@
-##Jedisocks
-####Overview
-[![Build Status](https://travis-ci.org/csujedihy/jedisocks.svg?branch=master)](https://travis-ci.org/csujedihy/jedisocks)
+##Jedisocks [![Build Status](https://travis-ci.org/csujedihy/jedisocks.svg?branch=master)](https://travis-ci.org/csujedihy/jedisocks) 
 
-Jedisocks is a tunnel proxy with TCP connections multiplexing on a single TCP connection. This project is still under development.
+---
+
+####Overview
+
+Jedisocks is a tunnel proxy with TCP connections multiplexing on a single TCP connection. This project is still **under development**.
 
 
 
 ####How to build:
-NOTE: Jedisocks is based on libuv. So, before compile this project, make sure [libuv](https://github.com/libuv/libuv) was successfully installed.
+NOTE: Jedisocks is based on libuv. So, before compile this project, make sure [libuv](https://github.com/libuv/libuv) was successfully installed:
+
+	$ git clone https://github.com/libuv/libuv.git
+	$ cd libuv
+	$ sh autogen.sh
+	$ ./configure
+	$ make install
+
+Then,
  
-	$ git clone [git address of this project]
+	$ git clone https://github.com/csujedihy/jedisocks.git
 	$ cd build
 	$ cmake ..
 	$ make
@@ -25,6 +35,8 @@ js-[local|server]
 -V Enable verbose log
 ```
 ####Example of configuration file
+We use the same config file as shadowsocks do.
+
 ```
 {
     "local_address":"127.0.0.1",
@@ -38,7 +50,7 @@ js-[local|server]
 2. Add encryption to bypass GFW.
 3. IPv6 support.
 4. Add flexible plugin system to extend functionality.
-5. Add re-connect mechanism to long multiplexing connection.
+5. ~~Add re-connect mechanism to long multiplexing connection.~~ (Accomplished)
 
 ####References
 This software is partly based on projects below.
