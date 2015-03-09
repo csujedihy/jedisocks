@@ -1,6 +1,5 @@
 ##Jedisocks [![Build Status](https://travis-ci.org/csujedihy/jedisocks.svg?branch=master)](https://travis-ci.org/csujedihy/jedisocks) 
 
----
 
 ####Overview
 
