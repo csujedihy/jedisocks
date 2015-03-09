@@ -28,8 +28,7 @@ static void remote_on_connect_cb(uv_connect_t* req, int status);
 static void server_write_cb(uv_write_t *req, int status);
 
 // customized functions
-static int try_to_close(uv_stream_t *stream);
-static void remote_close(uv_handle_t *handle);
+static int try_to_connect_remote(remote_ctx_t* ctx);
 static void send_EOF_packet(remote_ctx_t* ctx);
 
 #ifdef MEMDEBUG
@@ -51,7 +50,7 @@ void jfree(void * ptr) {
 
 static void send_EOF_packet(remote_ctx_t* ctx){
     int offset = 0;
-    char* pkt_buf = jmalloc(EXP_TO_RECV_LEN);
+    char* pkt_buf = jmalloc(HDRLEN);
     uint32_t session_id = htonl((uint32_t)ctx->session_id);
     LOGD("the session id of the closing session is %d", ctx->session_id);
     uint16_t datalen = 0;
@@ -534,7 +533,7 @@ int main(int argc, char **argv)
         USE_LOGFILE(serverlog);
 	loop = uv_default_loop();
 	server_ctx_t* ctx = calloc(1, sizeof(server_ctx_t));
-    ctx->expect_to_recv = EXP_TO_RECV_LEN;
+    ctx->expect_to_recv = HDRLEN;
 	ctx->listen.data = ctx;
 	uv_tcp_init(loop, &ctx->listen);
 	struct sockaddr_in bind_addr;

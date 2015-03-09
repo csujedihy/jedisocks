@@ -241,12 +241,9 @@ static void remote_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *b
                     wr->req.data = socks;
                     wr->buf = uv_buf_init(socks->response, ctx->tmp_packet.datalen);
                     uv_write(&wr->req, (uv_stream_t*)&socks->server, &wr->buf, 1, socks_write_cb);
-                    // LOGD("response\n");
-                    
                 }
                 else {
                     LOGD("found nothing in the map\n");
-                    //assert(0);
                 }
                 ctx->expect_to_recv = HDR_LEN;
             } else if (ctx->buf_len < HDR_LEN + ctx->tmp_packet.datalen) {
@@ -309,7 +306,6 @@ static int try_to_connect_remote(remote_ctx_t* ctx) {
 
 // socks accept callback
 static void socks_accept_cb(uv_stream_t *server, int status) {
-    fprintf(stderr, "accepting a new connection\n");
     if (status)
         ERROR("async connect", status);
     server_ctx_t *listener = (server_ctx_t*)server->data;
@@ -356,13 +352,13 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
         socks_handshake_t *socks_hsctx = client->data;
         socks_hsctx->closing = 1;
         if (!uv_is_closing((uv_handle_t*)&socks_hsctx->server)) {
-                // the remote is closing, we tell js-local to stop sending and preparing close
-                uv_read_stop((uv_stream_t *)&socks_hsctx->server);
+            // the remote is closing, we tell js-local to stop sending and preparing close
+            uv_read_stop((uv_stream_t *)&socks_hsctx->server);
 
-                // shutdown remote
-                uv_shutdown_t *req = malloc(sizeof(uv_shutdown_t));
-                req->data = socks_hsctx;
-                uv_shutdown(req, (uv_stream_t*)&socks_hsctx->server, socks_after_shutdown_cb);
+            // shutdown remote
+            uv_shutdown_t *req = malloc(sizeof(uv_shutdown_t));
+            req->data = socks_hsctx;
+            uv_shutdown(req, (uv_stream_t*)&socks_hsctx->server, socks_after_shutdown_cb);
         }        
         // for debug
         LOGD("A socks5 connection is closed\n");
@@ -501,7 +497,6 @@ static void remote_write_cb(uv_write_t *req, int status) {
     if (status) {
         LOGD("async write, maybe long remote connection is broken %d", status);
         remote_exception(remote_ctx);
-    
     }
     assert(wr->req.type == UV_WRITE);
     /* Free the read/write buffer and the request */
@@ -569,8 +564,8 @@ int main(int argc, char **argv) {
     }
 
     if (opterr || argc == 1 || conf.serverport == NULL || conf.server_address == NULL || conf.localport == NULL || conf.local_address == NULL) {
-        printf("Error: 1)passed wrong or null args to the program.\n");
-        printf("       2)parse config file failed.\n");
+        printf("Error: 1) pass wrong or null args to the program.\n");
+        printf("       2) parse config file failed.\n");
         usage();
         exit(EXIT_FAILURE);
     }
