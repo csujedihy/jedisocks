@@ -46,6 +46,8 @@ We use the same config file as shadowsocks do.
 ```
 ####Todo:
 1. ~~Read JSON file to load configuration.~~ (Accomplished)
+2. Implement a new map container to replace the current one used in this project.
+3. Add SOCKS5/HTTP compatible feature.
 2. Add encryption to bypass GFW.
 3. IPv6 support.
 4. Add flexible plugin system to extend functionality.
