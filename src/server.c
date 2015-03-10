@@ -11,9 +11,9 @@
 #include "jconf.h"
 
 uv_loop_t *loop;
-int verbose = 0;
-FILE * logfile = NULL;
-int log_to_file = 0;
+int verbose     = 0;
+FILE * logfile  = NULL;
+int log_to_file = 1;
 
 // callback functions
 static void remote_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t *buf);
@@ -50,12 +50,12 @@ void jfree(void * ptr) {
 
 static void send_EOF_packet(remote_ctx_t* ctx){
     int offset = 0;
-    char* pkt_buf = jmalloc(HDRLEN);
+    char* pkt_buf       = jmalloc(HDRLEN);
     uint32_t session_id = htonl((uint32_t)ctx->session_id);
+    uint16_t datalen    = 0;
+    char rsv            = CTL_CLOSE;
     LOGD("the session id of the closing session is %d", ctx->session_id);
-    uint16_t datalen = 0;
-    char rsv = CTL_CLOSE;
-    
+
     set_header(pkt_buf, &session_id, ID_LEN, offset);
     set_header(pkt_buf, &rsv, RSV_LEN, offset);
     set_header(pkt_buf, &datalen, DATALEN_LEN, offset);
@@ -119,9 +119,9 @@ static void remote_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
     } else if (nread > 0) {
         server_ctx_t* server_ctx = ctx->server_ctx;
         int offset = 0;
-        char* pkt_buf = calloc(1, ID_LEN + RSV_LEN + DATALEN_LEN + nread);
+        char* pkt_buf       = calloc(1, ID_LEN + RSV_LEN + DATALEN_LEN + nread);
         uint32_t session_id = htonl((uint32_t)ctx->session_id);
-        uint16_t datalen = htons((uint16_t)nread);
+        uint16_t datalen    = htons((uint16_t)nread);
         set_header(pkt_buf, &session_id, ID_LEN, offset);
         char rsv = CTL_NORMAL;
         
@@ -132,10 +132,10 @@ static void remote_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
         //LOGD("datalen(nread) = %d datalenno = %d", nread, datalen);
 
         write_req_t* req = calloc(1,sizeof(write_req_t));
-        req->req.data = ctx;
-        req->buf = uv_buf_init(pkt_buf, ID_LEN + RSV_LEN + DATALEN_LEN + nread);
+        req->req.data    = ctx;
+        req->buf         = uv_buf_init(pkt_buf, ID_LEN + RSV_LEN + DATALEN_LEN + nread);
 //        req->packet = ctx->packet;
-        req->pkt_buf = pkt_buf;
+        req->pkt_buf     = pkt_buf;
 //        jfree(ctx->packet);
         uv_write(&req->req, (uv_stream_t*)&ctx->server_ctx->server, &req->buf, 1, server_write_cb);
         jfree(buf->base);
@@ -186,9 +186,9 @@ static void remote_write_cb(uv_write_t *req, int status) {
     packet_t* packet = list_get_head_elem(&ctx->send_queue);
     if (packet) {
         write_req_t *wr = (write_req_t*) jmalloc(sizeof(write_req_t));
-        wr->req.data = ctx;
-        wr->buf = uv_buf_init(packet->data, packet->payloadlen);
-        wr->packet = packet;
+        wr->req.data    = ctx;
+        wr->buf         = uv_buf_init(packet->data, packet->payloadlen);
+        wr->packet      = packet;
         uv_write(&wr->req, req->handle, &wr->buf, 1, remote_write_cb);
         list_remove_elem(packet);
         jfree(packet);
@@ -219,9 +219,9 @@ static void remote_on_connect_cb(uv_connect_t* req, int status) {
     if (packet) {
         LOGD("sent something in remote_on_connect");
         write_req_t *wr = (write_req_t*) jmalloc(sizeof(write_req_t));
-        wr->req.data = ctx;
-        wr->buf = uv_buf_init(packet->data, packet->payloadlen);
-        wr->packet = packet;
+        wr->req.data    = ctx;
+        wr->buf         = uv_buf_init(packet->data, packet->payloadlen);
+        wr->packet      = packet;
         uv_write(&wr->req, req->handle, &wr->buf, 1, remote_write_cb);
         list_remove_elem(packet);
         jfree(packet);
@@ -285,7 +285,7 @@ static void server_accept_cb(uv_stream_t *server, int status) {
 		uv_close((uv_handle_t*)&ctx->server, NULL);
 	} else	{
         struct clib_map* map = new_c_map(compare_id, NULL, NULL);
-        ctx->idfd_map = map;
+        ctx->idfd_map        = map;
 		uv_read_start((uv_stream_t*)&ctx->server, server_alloc_cb, server_read_cb);
 	}
 }
@@ -390,8 +390,8 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
                         if (packet) {
                             write_req_t *wr = (write_req_t*) jmalloc(sizeof(write_req_t));
                             wr->req.data = exist_ctx;
-                            wr->buf = uv_buf_init(packet->data, packet->payloadlen);
-                            wr->packet = packet;
+                            wr->buf      = uv_buf_init(packet->data, packet->payloadlen);
+                            wr->packet   = packet;
                             //LOGD("send in (exist_ctx) server_read_cb len = %d data = \n%s\n",packet->payloadlen, wr->buf.base);
                             // TODO: debug here
                             uv_write(&wr->req, (uv_stream_t*)(void *)&exist_ctx->remote, &wr->buf, 1, remote_write_cb);
@@ -415,7 +415,7 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
                         return;
                     }
                     remote_ctx_t* remote_ctx = calloc(1, sizeof(remote_ctx_t));
-                    remote_ctx->server_ctx = ctx;
+                    remote_ctx->server_ctx  = ctx;
                     remote_ctx->remote.data = ctx;
                     list_init(&remote_ctx->send_queue);
                     get_header(&ctx->packet.atyp, ctx->packet_buf, ATYP_LEN, ctx->packet.offset);
@@ -430,8 +430,8 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
                     pkt_to_send->data = jmalloc(ctx->packet.payloadlen);
                     get_payload(pkt_to_send->data, ctx->packet_buf, ctx->packet.payloadlen, ctx->packet.offset);
                     //LOGD("(request)packet.data =\n%s", pkt_to_send->data);
-                    remote_ctx->host[remote_ctx->addrlen] = '\0'; // put a EOF on domain name
-                    remote_ctx->session_id = ctx->packet.session_id;
+                    remote_ctx->host[remote_ctx->addrlen] = '\0';// put a EOF on domain name
+                    remote_ctx->session_id                = ctx->packet.session_id;
                     insert_c_map (ctx->idfd_map, &remote_ctx->session_id, sizeof(int), remote_ctx, sizeof(int));
                     list_add_to_tail(&remote_ctx->send_queue, pkt_to_send);
                     //SHOWPKTDEBUGWODATA(remote_ctx);
@@ -528,21 +528,25 @@ int main(int argc, char **argv)
     conf.serverport = 7001;
 #endif
     server_validate_conf(&conf);
+    loop = uv_default_loop();
     char* serverlog = "/tmp/server.log";
     if (log_to_file)
         USE_LOGFILE(serverlog);
-	loop = uv_default_loop();
-	server_ctx_t* ctx = calloc(1, sizeof(server_ctx_t));
+    
+    
+    server_ctx_t* ctx   = calloc(1, sizeof(server_ctx_t));
     ctx->expect_to_recv = HDRLEN;
-	ctx->listen.data = ctx;
+    ctx->listen.data    = ctx;
 	uv_tcp_init(loop, &ctx->listen);
 	struct sockaddr_in bind_addr;
 	int r = uv_ip4_addr(conf.server_address, conf.serverport, &bind_addr);
     // TODO: parse json
     r = uv_tcp_bind(&ctx->listen, (struct sockaddr*)&bind_addr, 0);
-	if (r < 0)	fprintf(stderr, "js-server: bind error", r);
+	if (r < 0)
+        ERROR("js-server: bind error", r);
 	r = uv_listen((uv_stream_t*)&ctx->listen, 128, server_accept_cb);
-	if (r)	ERROR("js-server: listen error", r);
+	if (r)
+        ERROR("js-server: listen error", r);
 	fprintf(stderr, "js-server: listen on %s:%d\n", conf.server_address, conf.serverport);
 	uv_run(loop, UV_RUN_DEFAULT);
     CLOSE_LOGFILE;
