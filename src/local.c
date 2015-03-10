@@ -11,6 +11,8 @@
 #include "socks5.h"
 #include "c_map.h"
 
+#define PROJECT_FOR_503
+
 // callback functions
 static void socks_handshake_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t *buf);
 static void socks_handshake_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf);
@@ -271,8 +273,6 @@ static void connect_to_remote_cb(uv_connect_t* req, int status) {
         return;
     }
     req->handle->data = ctx;
-    struct clib_map* map = new_c_map(compare_id, NULL, NULL);
-    ctx->idfd_map        = map;
     uv_read_start(req->handle, remote_alloc_cb, remote_read_cb);
     
     /* visit all SOCKS5 context and tell them to start reading bufs*/
@@ -321,6 +321,12 @@ static void socks_accept_cb(uv_stream_t *server, int status) {
         remote_ctx_t* remote_ctx = listener->remote_long;
         list_add_to_tail(&remote_ctx->managed_socks_list, socks_hsctx);
         socks_hsctx->remote_long = remote_ctx;
+
+        // TODO: put these in MACROs
+        socks_hsctx->session_id = ++socks_hsctx->remote_long->sid;
+        insert_c_map (socks_hsctx->remote_long->idfd_map, &socks_hsctx->session_id, sizeof(int), socks_hsctx, sizeof(int));
+        if (socks_hsctx->remote_long->sid == INT_MAX)
+            socks_hsctx->remote_long->sid = 0;
         switch (remote_ctx->connected) {
             case RC_OFF:
                 try_to_connect_remote(remote_ctx);
@@ -338,6 +344,12 @@ static void socks_accept_cb(uv_stream_t *server, int status) {
         list_add_to_tail(&listener->remote_long->managed_socks_list, socks_hsctx);
         try_to_connect_remote(listener->remote_long);
         socks_hsctx->remote_long = listener->remote_long;
+        
+        // TODO: put these in MACROs
+        socks_hsctx->session_id = ++socks_hsctx->remote_long->sid;
+        insert_c_map (socks_hsctx->remote_long->idfd_map, &socks_hsctx->session_id, sizeof(int), socks_hsctx, sizeof(int));
+        if (socks_hsctx->remote_long->sid == INT_MAX)
+            socks_hsctx->remote_long->sid = 0;
     }
 }
 
@@ -347,9 +359,9 @@ static void socks_handshake_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t 
 }
 
 static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf) {
+    socks_handshake_t *socks_hsctx = client->data;
     if (verbose)  LOGD("nread = %d", nread);
     if (nread == UV_EOF) {
-        socks_handshake_t *socks_hsctx = client->data;
         socks_hsctx->closing = 1;
         if (!uv_is_closing((uv_handle_t*)&socks_hsctx->server)) {
             // the remote is closing, we tell js-local to stop sending and preparing close
@@ -363,20 +375,15 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
         // for debug
         LOGD("A socks5 connection is closed\n");
     } else if (nread > 0) {
-        socks_handshake_t *socks_hsctx = client->data;
         if (socks_hsctx->stage == 2) {
             if (!socks_hsctx->init) {
-                socks_hsctx->init       = 1;
-                socks_hsctx->session_id = ++socks_hsctx->remote_long->sid;
-                insert_c_map (socks_hsctx->remote_long->idfd_map, &socks_hsctx->session_id, sizeof(int), socks_hsctx, sizeof(int));
-                if (socks_hsctx->remote_long->sid == INT_MAX)
-                    socks_hsctx->remote_long->sid = 0;
-                int offset = 0;
-                char* pkt_buf = malloc(ID_LEN + RSV_LEN + DATALEN_LEN + ATYP_LEN + ADDRLEN_LEN \
+                socks_hsctx->init = 1;
+                int offset        = 0;
+                char* pkt_buf     = malloc(ID_LEN + RSV_LEN + DATALEN_LEN + ATYP_LEN + ADDRLEN_LEN \
                                         + socks_hsctx->addrlen + PORT_LEN + nread);
-                packet_t* pkt = calloc(1, sizeof(packet_t));
-                pkt->rawpacket = pkt_buf;
-                char rsv = CTL_INIT;
+                packet_t* pkt     = calloc(1, sizeof(packet_t));
+                pkt->rawpacket    = pkt_buf;
+                char rsv          = CTL_INIT;
                 uint32_t id_to_send = htonl((uint32_t)(socks_hsctx->session_id));
                 uint16_t datalen_to_send = htons((uint16_t)(ATYP_LEN + ADDRLEN_LEN + socks_hsctx->addrlen + PORT_LEN + nread));
                 set_header(pkt_buf, &id_to_send, ID_LEN, offset);
@@ -432,14 +439,48 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
         if (socks_hsctx->stage == 0){
             // received the first SOCKS5 request = in stage 0
             if (verbose)  LOGD("%ld bytes read\n", nread);
+            fprintf(stderr, "nread = %d\n", nread);
             total_read += nread;
             char socks_first_req[SOCKS5_FISRT_REQ_SIZE] = {0x05,0x01,0x00}; // refer to SOCKS5 protocol
             method_select_response_t *socks_first_resp = malloc(sizeof(method_select_response_t));
             socks_first_resp->ver    = SVERSION;
             socks_first_resp->method = HEXZERO;
-            int r = memcmp(socks_first_req, buf->base, SOCKS5_FISRT_REQ_SIZE);
-            if (r)
-                LOGD("Not a SOCKS5 request, drop n close");
+            int is_SOCKS5 = memcmp(socks_first_req, buf->base, SOCKS5_FISRT_REQ_SIZE);
+            if (is_SOCKS5) {
+                // To judge if it is a HTTP request
+                const char* http_symbol     = "HTTP/1.X\r\n";
+                const char* header_host_str = "Host: ";
+                char* chr = buf->base;
+                int cnt   = 0;
+                while (*(chr++) != '\n') {
+                    if (cnt++ == nread)
+                        break;
+                }
+                
+#define HTTP_CHRCTR_LEN 9
+#define HTTP_LF_OFFSET 10
+#define HTTP_SUBVER_POS 7
+                
+                for (int pos = 0; pos < HTTP_CHRCTR_LEN; ++pos) {
+                    if (pos != HTTP_SUBVER_POS) {
+                        if (http_symbol[pos] != *(chr - HTTP_LF_OFFSET + pos)) {
+                            fprintf(stderr, "not HTTP");
+                            break;
+                        }
+                    }
+                }
+                
+                int colon_pos = 0;
+                int find_pos  = 0;
+                while (*(chr++)!= header_host_str[0]) {
+                    // TODO:
+                }
+                
+                
+                //fprintf(stderr, "i = %d %c%c\n", i , *(chr - 7), *(chr - 6));
+                fprintf(stderr, "buf \n%s\n", buf->base);
+            
+            }
             
             write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
             wr->req.data    = socks_hsctx;
@@ -519,6 +560,8 @@ static remote_ctx_t* create_new_long_connection(server_ctx_t* listener){
     remote_ctx_long->remote.data    = remote_ctx_long;
     remote_ctx_long->listen         = listener;
     remote_ctx_long->connected      = RC_OFF;
+    struct clib_map* map = new_c_map(compare_id, NULL, NULL);
+    remote_ctx_long->idfd_map        = map;
     uv_tcp_init(loop, &remote_ctx_long->remote);
     list_init(&remote_ctx_long->managed_socks_list);
     return remote_ctx_long;
