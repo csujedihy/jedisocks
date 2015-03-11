@@ -452,33 +452,36 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
                 const char* header_host_str = "Host: ";
                 char* chr = buf->base;
                 int cnt   = 0;
+                
                 while (*(chr++) != '\n') {
                     if (cnt++ == nread)
                         break;
                 }
                 
-#define HTTP_CHRCTR_LEN 9
-#define HTTP_LF_OFFSET 10
-#define HTTP_SUBVER_POS 7
-                
-                for (int pos = 0; pos < HTTP_CHRCTR_LEN; ++pos) {
-                    if (pos != HTTP_SUBVER_POS) {
-                        if (http_symbol[pos] != *(chr - HTTP_LF_OFFSET + pos)) {
-                            fprintf(stderr, "not HTTP");
-                            break;
+                if (cnt <= nread) {
+                    
+                    for (int pos = 0; pos < HTTP_CHRCTR_LEN; ++pos) {
+                        if (pos != HTTP_SUBVER_POS) {
+                            if (http_symbol[pos] != *(chr - HTTP_LF_OFFSET + pos)) {
+                                fprintf(stderr, "not HTTP");
+                                break;
+                            }
                         }
                     }
+                    
+                    int pos = kmp_search(buf->base, nread, header_host_str, HEADER_HOST_STR_LEN);
+                    
+                    for (int i = 0; i < HEADER_HOST_STR_LEN; ++i) {
+                        fprintf(stderr,"%c", buf->base[pos + i]);
+                    }
+                    
+                } else {
+                
+                
+                
                 }
-                
-                int colon_pos = 0;
-                int find_pos  = 0;
-                while (*(chr++)!= header_host_str[0]) {
-                    // TODO:
-                }
-                
-                
-                //fprintf(stderr, "i = %d %c%c\n", i , *(chr - 7), *(chr - 6));
-                fprintf(stderr, "buf \n%s\n", buf->base);
+                              
+
             
             }
             

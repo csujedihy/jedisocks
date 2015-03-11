@@ -167,7 +167,13 @@ do { \
 #define list_elem_is_end(list, element) \
 ((element) == &(list)->head)
 
+#define HTTP_CHRCTR_LEN 9
+#define HTTP_LF_OFFSET 10
+#define HTTP_SUBVER_POS 7
+#define HEADER_HOST_STR_LEN 6
 
 void usage();
+
+int kmp_search(char* dest_str, int dest_str_len, char* src_str, int src_str_len);
 
 #endif
