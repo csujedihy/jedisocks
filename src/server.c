@@ -298,6 +298,7 @@ static void server_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t *buf) {
 
 // complex! de-multiplexing the long connection
 static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
+//    struct timeval _tv_start = GetTimeStamp();
     LOGD("hehe nread = %d", nread);
     
 //    LOGD("server_read_cb: ==============================start============================");
@@ -467,7 +468,8 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
         }
 	}
     LOGD("server_read_cb: ==============================end==============================\n");
-
+//    struct timeval _tv_end = GetTimeStamp();
+//    fprintf(stderr, "Time cost =  %ldus\n",((_tv_end.tv_sec*1000000 + _tv_end.tv_usec) - (_tv_start.tv_sec*1000000 + _tv_start.tv_usec)));
 }
 
 int main(int argc, char **argv)
@@ -532,7 +534,6 @@ int main(int argc, char **argv)
     char* serverlog = "/tmp/server.log";
     if (log_to_file)
         USE_LOGFILE(serverlog);
-    
     
     server_ctx_t* ctx   = calloc(1, sizeof(server_ctx_t));
     ctx->expect_to_recv = HDRLEN;

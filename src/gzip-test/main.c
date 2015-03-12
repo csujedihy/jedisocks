@@ -74,7 +74,6 @@ void *thread_for_uncompr(void *arg)
     return NULL;
 }
 
-
 int main(int argc, const char * argv[]) {
     void* status;
     //= strlen(text) + 1;  /* 需要把字符串的结束符'\0'也一并处理 */
@@ -97,12 +96,7 @@ int main(int argc, const char * argv[]) {
     }
     
     struct timeval _tv_start = GetTimeStamp();
-    int j = 0;
-    for (int i = 0; i < 32; ) {
-        i += 1;
-        if (i%50==5)
-            j++;
-    }
+
     struct timeval _tv_end = GetTimeStamp();
     
     printf("Time cost =  %ldms\n",((_tv_end.tv_sec*1000000 + _tv_end.tv_usec) - (_tv_start.tv_sec*1000000 + _tv_start.tv_usec))/1000);

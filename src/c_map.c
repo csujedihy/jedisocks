@@ -668,18 +668,22 @@ find_c_map ( struct clib_map* pMap, void* key, void**value) {
 
     if (pMap == (struct clib_map*)0)
         return clib_false;
+//    struct timeval _tv_start = GetTimeStamp();
 
     node = find_c_rb ( pMap->root, key);
     if ( node == (struct clib_rb_node*)0  ) 
         return clib_false;
 
     get_raw_clib_object ( node->value, value );
-
+    
+//    struct timeval _tv_end = GetTimeStamp();
+//    
+//    fprintf(stderr, "Time cost =  %ldus\n",((_tv_end.tv_sec*1000000 + _tv_end.tv_usec) - (_tv_start.tv_sec*1000000 + _tv_start.tv_usec)));
     return clib_true;
 
 }
 
-clib_error    
+clib_error
 delete_c_map ( struct clib_map* x) {
     clib_error rc = CLIB_ERROR_SUCCESS;
     if ( x != (struct clib_map*)0 ){

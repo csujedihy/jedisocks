@@ -22,3 +22,9 @@ Jedisocks v1.0\n\
     -P <remote_port> Port number of your remote server\n\
     ");
 }
+
+struct timeval GetTimeStamp() {
+    struct timeval tv;
+    gettimeofday(&tv,NULL);
+    return tv;
+}

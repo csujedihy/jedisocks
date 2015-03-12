@@ -162,6 +162,7 @@ static void remote_exception(remote_ctx_t* remote_ctx) {
 
 static void remote_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf) {
     remote_ctx_t* ctx = (remote_ctx_t*)client->data;
+//    struct timeval _tv_start = GetTimeStamp();
     if (verbose) LOGD("nread = %d\n", nread);
     if (nread == UV_EOF) {
         fprintf(stderr, "remote long connection is closed\n");
@@ -172,6 +173,7 @@ static void remote_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *b
             ctx->reset   = 1;
             ctx->buf_len = 0;
             ctx->offset  = 0;
+//            struct timeval _tv_start = GetTimeStamp();
             memset(ctx->packet_buf, 0, MAX_PKT_SIZE);
             memset(&ctx->tmp_packet, 0, sizeof(tmp_packet_t));
             ctx->stage = 0;
@@ -199,6 +201,7 @@ static void remote_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *b
                     ctx->expect_to_recv = HDR_LEN;
                     LOGD("received a CTL_CLOSE(0x04) packet -- session in js-server is closed");
                     socks_handshake_t* exist_ctx = NULL;
+
                     if (find_c_map(ctx->idfd_map, &ctx->tmp_packet.session_id, &exist_ctx))
                     {
                         exist_ctx->closed++;
@@ -259,6 +262,8 @@ static void remote_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *b
         LOGD("remote long connection error");
         remote_exception(ctx);
     }
+//    struct timeval _tv_end = GetTimeStamp();
+//    fprintf(stderr, "Time cost =  %ldus\n",((_tv_end.tv_sec*1000000 + _tv_end.tv_usec) - (_tv_start.tv_sec*1000000 + _tv_start.tv_usec)));
 }
 
 // Init a long connection to your server

@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <stdlib.h>
+#include <unistd.h>
 extern FILE * logfile;
 
 #define TIME_FORMAT "%Y-%m-%d %H:%M:%S"
@@ -22,7 +24,7 @@ extern FILE * logfile;
   assert(0);                                                                          \
 } while(0);
 
-#define LOGD(format, ...)   \
+#define _LOGD(format, ...)   \
     do {    \
             if (logfile != NULL) {  \
                 time_t now = time(NULL);    \
@@ -43,10 +45,7 @@ extern FILE * logfile;
         } \
     while (0)
 
-#define __LOGD(format, ...)   \
-do {    \
-} \
-while (0)
+#define LOGD(format, ...)
 
 #define FATAL(format, ...)   \
 do {    \
@@ -169,5 +168,5 @@ do { \
 
 
 void usage();
-
+struct timeval GetTimeStamp();
 #endif
