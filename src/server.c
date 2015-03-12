@@ -240,6 +240,7 @@ static int try_to_connect_remote(remote_ctx_t* ctx) {
     remote_addr.sin_port = *(uint16_t*)ctx->port; // notice: packet.port is in network order
     uv_connect_t* remote_conn_req = (uv_connect_t*) jmalloc(sizeof(uv_connect_t));
     uv_tcp_init(loop, &ctx->remote);
+    uv_tcp_nodelay(&ctx->remote, 0);
     ctx->remote.data = ctx; // is redundant?
     remote_conn_req->data = ctx;
     return uv_tcp_connect(remote_conn_req, &ctx->remote, (struct sockaddr*)&remote_addr, remote_on_connect_cb);
@@ -279,6 +280,8 @@ static void server_accept_cb(uv_stream_t *server, int status) {
 	server_ctx_t* ctx = server->data;
     ctx->server.data = ctx;
 	uv_tcp_init(loop, &ctx->server);
+    uv_tcp_nodelay(&ctx->server, 0);
+
 	int r = uv_accept(server, (uv_stream_t*)&ctx->server);
 	if (r) {
 		LOGD("error accepting connection %d", r);
@@ -323,7 +326,6 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
             if (ctx->buf_len >= EXP_TO_RECV_LEN) {
                 LOGD("stage = 0");
                 LOGD("3: buf_len = %d, reset = %d, stage = %d, expect_to_recv %d", ctx->buf_len, ctx->reset, ctx->stage, ctx->expect_to_recv);
-
                 get_id(ctx, &ctx->packet.session_id, ctx->packet_buf, ID_LEN, ctx->packet.offset);
                 get_header(&ctx->packet.rsv, ctx->packet_buf, RSV_LEN, ctx->packet.offset);
                 get_header(&ctx->packet.datalen, ctx->packet_buf, DATALEN_LEN, ctx->packet.offset);
@@ -539,6 +541,7 @@ int main(int argc, char **argv)
     ctx->expect_to_recv = HDRLEN;
     ctx->listen.data    = ctx;
 	uv_tcp_init(loop, &ctx->listen);
+    uv_tcp_nodelay(&ctx->listen, 0);
 	struct sockaddr_in bind_addr;
 	int r = uv_ip4_addr(conf.server_address, conf.serverport, &bind_addr);
     // TODO: parse json
