@@ -240,7 +240,7 @@ static int try_to_connect_remote(remote_ctx_t* ctx) {
     remote_addr.sin_port = *(uint16_t*)ctx->port; // notice: packet.port is in network order
     uv_connect_t* remote_conn_req = (uv_connect_t*) jmalloc(sizeof(uv_connect_t));
     uv_tcp_init(loop, &ctx->remote);
-    uv_tcp_nodelay(&ctx->remote, 0);
+    uv_tcp_nodelay(&ctx->remote, 1);
     ctx->remote.data = ctx; // is redundant?
     remote_conn_req->data = ctx;
     return uv_tcp_connect(remote_conn_req, &ctx->remote, (struct sockaddr*)&remote_addr, remote_on_connect_cb);
@@ -280,7 +280,7 @@ static void server_accept_cb(uv_stream_t *server, int status) {
 	server_ctx_t* ctx = server->data;
     ctx->server.data = ctx;
 	uv_tcp_init(loop, &ctx->server);
-    uv_tcp_nodelay(&ctx->server, 0);
+    uv_tcp_nodelay(&ctx->server, 1);
 
 	int r = uv_accept(server, (uv_stream_t*)&ctx->server);
 	if (r) {
@@ -541,7 +541,7 @@ int main(int argc, char **argv)
     ctx->expect_to_recv = HDRLEN;
     ctx->listen.data    = ctx;
 	uv_tcp_init(loop, &ctx->listen);
-    uv_tcp_nodelay(&ctx->listen, 0);
+    uv_tcp_nodelay(&ctx->listen, 1);
 	struct sockaddr_in bind_addr;
 	int r = uv_ip4_addr(conf.server_address, conf.serverport, &bind_addr);
     // TODO: parse json

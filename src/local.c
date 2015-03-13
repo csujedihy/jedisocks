@@ -317,7 +317,7 @@ static void socks_accept_cb(uv_stream_t *server, int status) {
     socks_handshake_t *socks_hsctx = calloc(1, sizeof(socks_handshake_t));
     socks_hsctx->server.data = socks_hsctx;
     uv_tcp_init(loop, &socks_hsctx->server);
-    uv_tcp_nodelay(&socks_hsctx->server, 0);
+    uv_tcp_nodelay(&socks_hsctx->server, 1);
     int r = uv_accept(server, (uv_stream_t*) &socks_hsctx->server);
     if (r) {
         fprintf(stderr, "accepting connection failed %d", r);
@@ -527,7 +527,7 @@ static remote_ctx_t* create_new_long_connection(server_ctx_t* listener){
     remote_ctx_long->connected      = RC_OFF;
     uv_tcp_init(loop, &remote_ctx_long->remote);
     list_init(&remote_ctx_long->managed_socks_list);
-    uv_tcp_nodelay(&remote_ctx_long->remote, 0);
+    uv_tcp_nodelay(&remote_ctx_long->remote, 1);
     return remote_ctx_long;
 }
 
@@ -605,9 +605,9 @@ int main(int argc, char **argv) {
     listener_http->remote_long  = create_new_long_connection(listener_http);
     
     uv_tcp_init(loop, &listener_http->server);
-    uv_tcp_nodelay(&listener_http->server, 0);
+    uv_tcp_nodelay(&listener_http->server, 1);
     uv_tcp_init(loop, &listener->server);
-    uv_tcp_nodelay(&listener->server, 0);
+    uv_tcp_nodelay(&listener->server, 1);
     
     int r = 0;
     r = uv_ip4_addr(conf.local_address, conf.localport, &bind_addr);
