@@ -167,10 +167,13 @@ do { \
 #define list_elem_is_end(list, element) \
 ((element) == &(list)->head)
 
+#define HTTP_SPACE_LEN 1
 #define HTTP_CHRCTR_LEN 9
 #define HTTP_LF_OFFSET 10
 #define HTTP_SUBVER_POS 7
 #define HEADER_HOST_STR_LEN 6
+#define HTTPS_SYMBOL_LEN 7
+
 
 void usage();
 
