@@ -403,9 +403,56 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
                 printf("path is %.*s\n", (int)path_len, path);
                 printf("HTTP version is 1.%d\n", minor_version);
                 printf("headers:\n");
+                int spec_port_flag = 0;
+                int port_pos       = 0;
+                int pos     = 0;
+                int addrlen = 0;
+                char colon = ':';
                 for (int i = 0; i != num_headers; ++i) {
-                    printf("%.*s: %.*s\n", (int)headers[i].name_len, headers[i].name,
-                           (int)headers[i].value_len, headers[i].value);
+                    if ((int)headers[i].name_len == 4) {
+                        if (!memcmp(headers[i].name, "Host", 4)) {
+                            printf("%d %.*s: %.*s\n", (int)headers[i].name_len, (int)headers[i].name_len, headers[i].name,
+                                   (int)headers[i].value_len, headers[i].value);
+                            int cnt = 0;
+                            while (cnt < (int)headers[i].value_len) {
+                                //                        fprintf(stderr, "%c", buf->base[pos + cnt]);
+                                
+                                if (spec_port_flag) {
+                                    socks_hsctx->port[port_pos++] = headers[i].value[cnt];
+                                }
+                                
+                                if (!spec_port_flag && headers[i].value[cnt] != colon) {
+                                    if (cnt < 255) {
+                                    socks_hsctx->host[cnt] = headers[i].value[cnt];
+                                        addrlen++;
+                                    }
+                                }
+                                else {
+                                    spec_port_flag = 1;
+                                }
+                                
+                                if (++cnt == 255 /* maximum domain len*/ + 6 /* maximum port len*/+ 1 /* colon len*/ + 2 /* CRLF len*/)
+                                    break;
+                            }
+                            if (!spec_port_flag) {
+                                socks_hsctx->port[0] = '8';
+                                socks_hsctx->port[1] = '0';
+                                socks_hsctx->port[2] = '\0';
+                            } else
+                                socks_hsctx->port[port_pos] = '\0';
+                            socks_hsctx->atyp    = ATYP_DOMAIN;
+                            uint16_t* port = socks_hsctx->port;
+                            (*port) = htons((uint16_t)atoi(socks_hsctx->port));
+                            fprintf(stderr, "test domain len = %d port = %d %d\n", addrlen, *port, ntohs(*port));
+                        }
+                    } else if ((int)headers[i].name_len == 16) {
+                        if (!memcmp(headers[i].name, "Proxy-Connection", 16)) {
+                            printf("%d %.*s: %.*s\n", (int)headers[i].name_len, (int)headers[i].name_len, headers[i].name,
+                                   (int)headers[i].value_len, headers[i].value);
+                        
+                        }
+                    
+                    }
                 }
             } else if (pret == -1)
                 fprintf(stderr, "Parse error");
@@ -662,7 +709,7 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
 
         
         
-        }
+    
         
     if (nread == 0) free(buf->base);
 }
