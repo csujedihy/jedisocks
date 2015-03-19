@@ -431,6 +431,7 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
                     get_payload(pkt_to_send->data, ctx->packet_buf, ctx->packet.payloadlen, ctx->packet.offset);
                     //LOGD("(request)packet.data =\n%s", pkt_to_send->data);
                     remote_ctx->host[remote_ctx->addrlen] = '\0';// put a EOF on domain name
+                    fprintf(stderr, "host %s\n", remote_ctx->host);
                     remote_ctx->session_id                = ctx->packet.session_id;
                     insert_c_map (ctx->idfd_map, &remote_ctx->session_id, sizeof(int), remote_ctx, sizeof(int));
                     list_add_to_tail(&remote_ctx->send_queue, pkt_to_send);

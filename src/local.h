@@ -86,7 +86,7 @@ typedef struct socks_handshake
     char* response;
     struct remote_ctx* remote_long;
     char* request_buf;
-    int reques_buf_len;
+    int request_buf_len;
     struct socks_handshake* prev;
     struct socks_handshake* next;
 } socks_handshake_t;

@@ -361,7 +361,9 @@ static void socks_handshake_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t 
 
 static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf) {
     socks_handshake_t *socks_hsctx = client->data;
-    if (verbose)  LOGD("nread = %d", nread);
+    if (verbose)
+        LOGD("nread = %d", nread);
+
     if (nread == UV_EOF) {
         socks_hsctx->closing = 1;
         if (!uv_is_closing((uv_handle_t*)&socks_hsctx->server)) {
@@ -391,10 +393,10 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
             struct phr_header headers[100];
             size_t buflen = 0, prevbuflen = 0, method_len, path_len, num_headers;
             ssize_t rret;
-            memcpy(socks_hsctx->request_buf, buf->base, nread);
-            socks_hsctx->reques_buf_len += nread;
+            memcpy(socks_hsctx->request_buf + socks_hsctx->request_buf_len, buf->base, nread);
+            socks_hsctx->request_buf_len += nread;
             num_headers = sizeof(headers) / sizeof(headers[0]);
-            pret = phr_parse_request(socks_hsctx->request_buf, socks_hsctx->reques_buf_len, &method, &method_len, &path, &path_len,
+            pret = phr_parse_request(socks_hsctx->request_buf, socks_hsctx->request_buf_len, &method, &method_len, &path, &path_len,
                                      &minor_version, headers, &num_headers, prevbuflen);
             
             if (pret > 0) {
@@ -402,7 +404,7 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
                 printf("method is %.*s\n", (int)method_len, method);
                 printf("path is %.*s\n", (int)path_len, path);
                 printf("HTTP version is 1.%d\n", minor_version);
-                printf("headers:\n");
+                printf("headers: (UV_EOF = %d)\n", UV_EOF);
                 int spec_port_flag = 0;
                 int port_pos       = 0;
                 int pos     = 0;
@@ -415,8 +417,6 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
                                    (int)headers[i].value_len, headers[i].value);
                             int cnt = 0;
                             while (cnt < (int)headers[i].value_len) {
-                                //                        fprintf(stderr, "%c", buf->base[pos + cnt]);
-                                
                                 if (spec_port_flag) {
                                     socks_hsctx->port[port_pos++] = headers[i].value[cnt];
                                 }
@@ -434,16 +434,19 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
                                 if (++cnt == 255 /* maximum domain len*/ + 6 /* maximum port len*/+ 1 /* colon len*/ + 2 /* CRLF len*/)
                                     break;
                             }
+                            
                             if (!spec_port_flag) {
                                 socks_hsctx->port[0] = '8';
                                 socks_hsctx->port[1] = '0';
                                 socks_hsctx->port[2] = '\0';
                             } else
                                 socks_hsctx->port[port_pos] = '\0';
+                            
                             socks_hsctx->atyp    = ATYP_DOMAIN;
-                            uint16_t* port = socks_hsctx->port;
-                            (*port) = htons((uint16_t)atoi(socks_hsctx->port));
-                            fprintf(stderr, "test domain len = %d port = %d %d\n", addrlen, *port, ntohs(*port));
+                            socks_hsctx->addrlen = addrlen;
+                            uint16_t port = htons((uint16_t)atoi(socks_hsctx->port));
+                            memcpy(socks_hsctx->port, &port, 2);
+//                            fprintf(stderr, "test domain len = %d port = %d %d\n", addrlen, *port, ntohs(*port));
                         }
                     } else if ((int)headers[i].name_len == 16) {
                         if (!memcmp(headers[i].name, "Proxy-Connection", 16)) {
@@ -454,263 +457,153 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
                     
                     }
                 }
+                
+                if (!memcmp(method, "CONNECT", strlen("CONNECT"))) {
+                    fprintf(stderr, "this is a HTTPS request");
+                    const char* local_https_reply_str = "HTTP/1.1 200 Connection Established\r\n\r\n";
+                    char* reply_str_to_send = (char*)malloc(strlen(local_https_reply_str));
+                    memcpy(reply_str_to_send, local_https_reply_str, strlen(local_https_reply_str));
+                    write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
+                    wr->req.data    = socks_hsctx;
+                    wr->buf         = uv_buf_init((char*)reply_str_to_send, strlen(local_https_reply_str));
+                    uv_write(&wr->req, client, &wr->buf, 1 /*nbufs*/, socks_write_cb);
+                    socks_hsctx->isHTTP = 0;
+                    socks_hsctx->stage = 2; // quick switch current stage to stage 2
+                    free(socks_hsctx->request_buf);
+                    return;
+                }
             } else if (pret == -1)
                 fprintf(stderr, "Parse error");
-            } else {
-            
-            
-            
             }
-        
-        
-        
-        }
-        
-        
-        // non-HTTP (SOCKS5 stream) process
-        if (!socks_hsctx->isHTTP) {
-            if (socks_hsctx->stage == 0){
-                // received the first SOCKS5 request = in stage 0
-                if (verbose)  LOGD("%ld bytes read\n", nread);
-                fprintf(stderr, "nread = %d\n", nread);
-                total_read += nread;
-                char socks_first_req[SOCKS5_FISRT_REQ_SIZE] = {0x05,0x01,0x00}; // refer to SOCKS5 protocol
-                const char* https_connect_symbol = "CONNECT";
-                int not_SOCKS5 = memcmp(socks_first_req, buf->base, SOCKS5_FISRT_REQ_SIZE);
-                if (not_SOCKS5) {
-                    fprintf(stderr, "buf\n%s\n", buf->base);
-                    // To judge if it is a HTTP request
-                    const char* http_symbol     = "HTTP/1.X\r\n";
-                    const char* header_host_str = "Host: ";
-                    char* chr = buf->base;
-                    int cnt   = 0;
-                    
-                    while (*(chr++) != '\n') {
-                        if (cnt++ == nread)
-                            break;
+    
+            // non-HTTP (SOCKS5 stream) process
+            if (!socks_hsctx->isHTTP) {
+                if (socks_hsctx->stage == 2) {
+                    if (!socks_hsctx->init) {
+                        socks_hsctx->init = 1;
+                        int offset        = 0;
+                        char* pkt_buf     = malloc(ID_LEN + RSV_LEN + DATALEN_LEN + ATYP_LEN + ADDRLEN_LEN \
+                                                   + socks_hsctx->addrlen + PORT_LEN + nread);
+                        packet_t* pkt     = calloc(1, sizeof(packet_t));
+                        pkt->rawpacket    = pkt_buf;
+                        char rsv          = CTL_INIT;
+                        uint32_t id_to_send = htonl((uint32_t)(socks_hsctx->session_id));
+                        uint16_t datalen_to_send = htons((uint16_t)(ATYP_LEN + ADDRLEN_LEN + socks_hsctx->addrlen + PORT_LEN + nread));
+                        set_header(pkt_buf, &id_to_send, ID_LEN, offset);
+                        set_header(pkt_buf, &rsv, RSV_LEN, offset);
+                        set_header(pkt_buf, &datalen_to_send, DATALEN_LEN, offset);
+                        set_header(pkt_buf, &socks_hsctx->atyp, ATYP_LEN, offset);
+                        LOGD("pkt_maker atyp %d", socks_hsctx->atyp);
+                        set_header(pkt_buf, &socks_hsctx->addrlen, ADDRLEN_LEN, offset);
+                        set_header(pkt_buf, &socks_hsctx->host, socks_hsctx->addrlen, offset);
+                        set_header(pkt_buf, &socks_hsctx->port, PORT_LEN, offset);
+                        set_payload(pkt_buf, buf->base, nread, offset);
+                        //SHOW_BUFFER(pkt_buf, nread);
+                        if (verbose) LOGD("now here is buf\n");
+                        if (verbose) SHOW_BUFFER(buf->base, ID_LEN + RSV_LEN + DATALEN_LEN + ATYP_LEN \
+                                                 + ADDRLEN_LEN + socks_hsctx->addrlen + PORT_LEN + nread);
+                        
+                        write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
+                        wr->req.data    = socks_hsctx;
+                        wr->buf         = uv_buf_init(pkt_buf, ID_LEN + RSV_LEN + DATALEN_LEN + ATYP_LEN \
+                                                      + ADDRLEN_LEN + socks_hsctx->addrlen + PORT_LEN + nread);
+                        uv_write(&wr->req, (uv_stream_t*)&socks_hsctx->remote_long->remote, &wr->buf, 1, remote_write_cb);
+                        // do not forget freeing buffers
                     }
-                    
-                    if (cnt < nread) {
-                        
-                        for (int pos = 0; pos < HTTP_CHRCTR_LEN; ++pos) {
-                            if (pos != HTTP_SUBVER_POS) {
-                                if (http_symbol[pos] != *(chr - HTTP_LF_OFFSET + pos)) {
-                                    // This is not a HTTP request
-                                    // Do close this connection
-                                    break;
-                                }
-                            }
-                        }
-                        
-                        int is_HTTPS       = !(memcmp(https_connect_symbol, buf->base, HTTPS_SYMBOL_LEN));
-                        int spec_port_flag = 0;
-                        int port_pos       = 0;
-                        int pos     = 0;
-                        int addrlen = 0;
-                        char colon = ':';
-                        cnt = 0;
-                        
-                        if (is_HTTPS) {
-                            // HTTPS process
-                            fprintf(stderr, "via HTTPS\n");
-                            pos = HTTPS_SYMBOL_LEN + HTTP_SPACE_LEN;
-                        } else {
-                            fprintf(stderr, "via HTTP\n");
-                            socks_hsctx->isHTTP = 1;
-                            pos = HEADER_HOST_STR_LEN + kmp_search(buf->base, nread, header_host_str, HEADER_HOST_STR_LEN);
-                        }
-                        
-                        
-                        while (buf->base[pos + cnt] != '\r') {
-                            //                        fprintf(stderr, "%c", buf->base[pos + cnt]);
-                            
-                            if (spec_port_flag) {
-                                socks_hsctx->port[port_pos++] = buf->base[pos + cnt];
-                            }
-                            
-                            if (!spec_port_flag && buf->base[pos + cnt] != colon) {
-                                if (cnt < 255) {
-                                    socks_hsctx->host[cnt] = buf->base[pos + cnt];
-                                    addrlen++;
-                                }
-                            }
-                            else {
-                                spec_port_flag = 1;
-                            }
-                            
-                            if (++cnt == 255 /* maximum domain len*/ + 6 /* maximum port len*/+ 1 /* colon len*/ + 2 /* CRLF len*/)
-                                break;
-                        }
-                        if (!spec_port_flag) {
-                            socks_hsctx->port[0] = '8';
-                            socks_hsctx->port[1] = '0';
-                            socks_hsctx->port[2] = '\0';
-                        } else
-                            socks_hsctx->port[port_pos] = '\0';
-                        socks_hsctx->atyp    = ATYP_DOMAIN;
-                        uint16_t* port = socks_hsctx->port;
-                        (*port) = htons((uint16_t)atoi(socks_hsctx->port));
-                        fprintf(stderr, "test domain len = %d port = %d %d\n", addrlen, *port, ntohs(*port));
-                        //                    socks_hsctx->stage = 2; // quick switch current stage to stage 2
-                        if (is_HTTPS) {
-                            // HTTPS process
-                            const char* local_https_reply_str = "HTTP/1.1 200 OK\r\n";
-                            char* reply_str_to_send = (char*)malloc(strlen(local_https_reply_str));
-                            memcpy(reply_str_to_send, local_https_reply_str, strlen(local_https_reply_str));
-                            write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
-                            wr->req.data    = socks_hsctx;
-                            wr->buf         = uv_buf_init((char*)reply_str_to_send, strlen(local_https_reply_str));
-                            uv_write(&wr->req, client, &wr->buf, 1 /*nbufs*/, socks_write_cb);
-                            socks_hsctx->stage = 2; // quick switch current stage to stage 2
-                            return;
-                            
-                        } else {
-                            
-                            
-                            
-                            //                        for (int i = 0; i < P_C_pos; ++i) {
-                            //                            fprintf(stderr, "%c", request_part_one[i]);
-                            //                        }
-                            //                        for (int i = 0; i < nread - P_C_pos - 6; ++i) {
-                            //                            fprintf(stderr, "%c", request_part_two[i]);
-                            //                        }
-                            //                        fprintf(stderr, "\n");
-                            
-                            
-                            
-                        }
-                        
-                    } else {
-                        // Do close this connection
-                        
-                        
-                    }
-                    
-                    
-                    
-                }
-                else {
-                    fprintf(stderr, "via SOCKS5\n");
-                    // This is a SOCKS5 request
-                    method_select_response_t *socks_first_resp = malloc(sizeof(method_select_response_t));
-                    socks_first_resp->ver    = SVERSION;
-                    socks_first_resp->method = HEXZERO;
-                    write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
-                    wr->req.data    = socks_hsctx;
-                    wr->buf         = uv_buf_init((char*)socks_first_resp, sizeof(method_select_response_t));
-                    uv_write(&wr->req, client, &wr->buf, 1 /*nbufs*/, socks_write_cb);
-                    socks_hsctx->stage = 1;
-                    // sent the 1st response -> switch to the stage 1
-                }
-                
-            } else if (socks_hsctx->stage == 1){
-                // received 2nd request in stage 1
-                // here we have to parse the requested domain or ip address, then we store it in hsctx
-                socks5_req_or_resp_t* req = (socks5_req_or_resp_t*)buf->base;
-                char* addr_ptr = &req->atyp + 1;
-                if (req->atyp == ATYP_IPV4) {
-                    
-                    // client requests a ipv4 address
-                    socks_hsctx->atyp    = ATYP_IPV4;
-                    socks_hsctx->addrlen = 4;
-                    memcpy(socks_hsctx->host, addr_ptr, 4);  // ipv4 copied
-                    addr_ptr += 4;
-                    memcpy(socks_hsctx->port, addr_ptr, 2);  // port copied in network order
-                    //                uint16_t p = ntohs(*(uint16_t *)(socks_hsctx->port));
-                    
-                } else if (req->atyp == ATYP_DOMAIN){
-                    if (verbose) LOGD("atyp == 3\n");
-                    socks_hsctx->atyp    = ATYP_DOMAIN;
-                    socks_hsctx->addrlen = *(addr_ptr++);
-                    memcpy(socks_hsctx->host, addr_ptr, socks_hsctx->addrlen);      // domain name copied
-                    addr_ptr += socks_hsctx->addrlen;
-                    memcpy(socks_hsctx->port, addr_ptr, 2);                         // port copied
-                    //                uint16_t p = ntohs(*(uint16_t *)(socks_hsctx->port));           //conv to host order
-                } else
-                    LOGD("ERROR: unexpected atyp");
-                
-                socks5_req_or_resp_t* resp = calloc(1, sizeof(socks5_req_or_resp_t));
-                memcpy(resp, req, sizeof(socks5_req_or_resp_t) - 4);
-                // only copy the first 4 bytes to save time
-                
-                resp->cmd_or_resp = REP_OK;
-                resp->atyp        = 1;
-                
-                write_req_t *wr   = (write_req_t*) malloc(sizeof(write_req_t));
-                wr->req.data      = socks_hsctx;
-                wr->buf           = uv_buf_init((char*)resp, sizeof(socks5_req_or_resp_t));
-                uv_write(&wr->req, client, &wr->buf, 1, socks_write_cb);
-                socks_hsctx->stage = 2;
-            }
-            
-            if (socks_hsctx->stage == 2) {
-                if (!socks_hsctx->init) {
-                    socks_hsctx->init = 1;
-                    int offset        = 0;
-                    char* pkt_buf     = malloc(ID_LEN + RSV_LEN + DATALEN_LEN + ATYP_LEN + ADDRLEN_LEN \
-                                               + socks_hsctx->addrlen + PORT_LEN + nread);
-                    packet_t* pkt     = calloc(1, sizeof(packet_t));
-                    pkt->rawpacket    = pkt_buf;
-                    char rsv          = CTL_INIT;
-                    uint32_t id_to_send = htonl((uint32_t)(socks_hsctx->session_id));
-                    uint16_t datalen_to_send = htons((uint16_t)(ATYP_LEN + ADDRLEN_LEN + socks_hsctx->addrlen + PORT_LEN + nread));
-                    set_header(pkt_buf, &id_to_send, ID_LEN, offset);
-                    set_header(pkt_buf, &rsv, RSV_LEN, offset);
-                    set_header(pkt_buf, &datalen_to_send, DATALEN_LEN, offset);
-                    set_header(pkt_buf, &socks_hsctx->atyp, ATYP_LEN, offset);
-                    LOGD("pkt_maker atyp %d", socks_hsctx->atyp);
-                    set_header(pkt_buf, &socks_hsctx->addrlen, ADDRLEN_LEN, offset);
-                    set_header(pkt_buf, &socks_hsctx->host, socks_hsctx->addrlen, offset);
-                    set_header(pkt_buf, &socks_hsctx->port, PORT_LEN, offset);
-                    set_payload(pkt_buf, buf->base, nread, offset);
-                    //SHOW_BUFFER(pkt_buf, nread);
-                    if (verbose) LOGD("now here is buf\n");
-                    if (verbose) SHOW_BUFFER(buf->base, ID_LEN + RSV_LEN + DATALEN_LEN + ATYP_LEN \
-                                             + ADDRLEN_LEN + socks_hsctx->addrlen + PORT_LEN + nread);
-                    
-                    write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
-                    wr->req.data    = socks_hsctx;
-                    wr->buf         = uv_buf_init(pkt_buf, ID_LEN + RSV_LEN + DATALEN_LEN + ATYP_LEN \
-                                                  + ADDRLEN_LEN + socks_hsctx->addrlen + PORT_LEN + nread);
-                    uv_write(&wr->req, (uv_stream_t*)&socks_hsctx->remote_long->remote, &wr->buf, 1, remote_write_cb);
-                    // do not forget freeing buffers
-                }
-                else
-                {
-                    if (socks_hsctx->closing == 1)
+                    else
                     {
-                        free(buf->base);
-                        return;
+                        if (socks_hsctx->closing == 1)
+                        {
+                            free(buf->base);
+                            return;
+                        }
+                        int offset = 0;
+                        char* pkt_buf = calloc(1, ID_LEN + RSV_LEN + DATALEN_LEN + nread);
+                        packet_t* pkt = calloc(1, sizeof(packet_t));
+                        pkt->rawpacket = pkt_buf;
+                        char rsv = CTL_NORMAL;
+                        uint32_t id_to_send      = ntohl((uint32_t)(socks_hsctx->session_id));
+                        uint16_t datalen_to_send = ntohs((uint16_t)nread);
+                        set_header(pkt_buf, &id_to_send, ID_LEN, offset);
+                        set_header(pkt_buf, &rsv, RSV_LEN, offset);
+                        set_header(pkt_buf, &datalen_to_send, DATALEN_LEN, offset);
+                        set_payload(pkt_buf, buf->base, nread, offset);
+                        if (verbose) SHOW_BUFFER(pkt_buf, nread);
+                        
+                        // to add a pointer to refer to long remote connection
+                        write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
+                        wr->req.data = socks_hsctx;
+                        wr->buf = uv_buf_init(pkt_buf, ID_LEN + RSV_LEN + DATALEN_LEN + nread);
+                        uv_write(&wr->req, (uv_stream_t*)&socks_hsctx->remote_long->remote, &wr->buf, 1, remote_write_cb);
+                        // do not forget free buffers
                     }
-                    int offset = 0;
-                    char* pkt_buf = calloc(1, ID_LEN + RSV_LEN + DATALEN_LEN + nread);
-                    packet_t* pkt = calloc(1, sizeof(packet_t));
-                    pkt->rawpacket = pkt_buf;
-                    char rsv = CTL_NORMAL;
-                    uint32_t id_to_send      = ntohl((uint32_t)(socks_hsctx->session_id));
-                    uint16_t datalen_to_send = ntohs((uint16_t)nread);
-                    set_header(pkt_buf, &id_to_send, ID_LEN, offset);
-                    set_header(pkt_buf, &rsv, RSV_LEN, offset);
-                    set_header(pkt_buf, &datalen_to_send, DATALEN_LEN, offset);
-                    set_payload(pkt_buf, buf->base, nread, offset);
-                    if (verbose) SHOW_BUFFER(pkt_buf, nread);
-                    
-                    // to add a pointer to refer to long remote connection
-                    write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
-                    wr->req.data = socks_hsctx;
-                    wr->buf = uv_buf_init(pkt_buf, ID_LEN + RSV_LEN + DATALEN_LEN + nread);
-                    uv_write(&wr->req, (uv_stream_t*)&socks_hsctx->remote_long->remote, &wr->buf, 1, remote_write_cb);
-                    // do not forget free buffers
                 }
+                
+                if (socks_hsctx->stage == 0){
+                    // received the first SOCKS5 request = in stage 0
+                    if (verbose)  LOGD("%ld bytes read\n", nread);
+                    total_read += nread;
+                    char socks_first_req[SOCKS5_FISRT_REQ_SIZE] = {0x05,0x01,0x00}; // refer to SOCKS5 protocol
+                    const char* https_connect_symbol = "CONNECT";
+                    int not_SOCKS5 = memcmp(socks_first_req, buf->base, SOCKS5_FISRT_REQ_SIZE);
+
+                        // This is a SOCKS5 request
+                        method_select_response_t *socks_first_resp = malloc(sizeof(method_select_response_t));
+                        socks_first_resp->ver    = SVERSION;
+                        socks_first_resp->method = HEXZERO;
+                        write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
+                        wr->req.data    = socks_hsctx;
+                        wr->buf         = uv_buf_init((char*)socks_first_resp, sizeof(method_select_response_t));
+                        uv_write(&wr->req, client, &wr->buf, 1 /*nbufs*/, socks_write_cb);
+                        socks_hsctx->stage = 1;
+                        // sent the 1st response -> switch to the stage 1
+                    
+                } else if (socks_hsctx->stage == 1){
+                    // received 2nd request in stage 1
+                    // here we have to parse the requested domain or ip address, then we store it in hsctx
+                    socks5_req_or_resp_t* req = (socks5_req_or_resp_t*)buf->base;
+                    char* addr_ptr = &req->atyp + 1;
+                    if (req->atyp == ATYP_IPV4) {
+                        
+                        // client requests a ipv4 address
+                        socks_hsctx->atyp    = ATYP_IPV4;
+                        socks_hsctx->addrlen = 4;
+                        memcpy(socks_hsctx->host, addr_ptr, 4);  // ipv4 copied
+                        addr_ptr += 4;
+                        memcpy(socks_hsctx->port, addr_ptr, 2);  // port copied in network order
+                        //                uint16_t p = ntohs(*(uint16_t *)(socks_hsctx->port));
+                        
+                    } else if (req->atyp == ATYP_DOMAIN){
+                        if (verbose) LOGD("atyp == 3\n");
+                        socks_hsctx->atyp    = ATYP_DOMAIN;
+                        socks_hsctx->addrlen = *(addr_ptr++);
+                        memcpy(socks_hsctx->host, addr_ptr, socks_hsctx->addrlen);      // domain name copied
+                        addr_ptr += socks_hsctx->addrlen;
+                        memcpy(socks_hsctx->port, addr_ptr, 2);                         // port copied
+                        //                uint16_t p = ntohs(*(uint16_t *)(socks_hsctx->port));           //conv to host order
+                    } else
+                        LOGD("ERROR: unexpected atyp");
+                    
+                    socks5_req_or_resp_t* resp = calloc(1, sizeof(socks5_req_or_resp_t));
+                    memcpy(resp, req, sizeof(socks5_req_or_resp_t) - 4);
+                    // only copy the first 4 bytes to save time
+                    
+                    resp->cmd_or_resp = REP_OK;
+                    resp->atyp        = 1;
+                    
+                    write_req_t *wr   = (write_req_t*) malloc(sizeof(write_req_t));
+                    wr->req.data      = socks_hsctx;
+                    wr->buf           = uv_buf_init((char*)resp, sizeof(socks5_req_or_resp_t));
+                    uv_write(&wr->req, client, &wr->buf, 1, socks_write_cb);
+                    socks_hsctx->stage = 2;
+                }
+                
+                free(buf->base);
             }
             
-            free(buf->base);
         }
-
-        
         
     
-        
     if (nread == 0) free(buf->base);
 }
 
