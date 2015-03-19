@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C116758C1ABAC3D300A82E1B /* picohttpparser.c in Sources */ = {isa = PBXBuildFile; fileRef = C116758A1ABAC3D300A82E1B /* picohttpparser.c */; };
 		C1451D721A9DA971008BDE72 /* js0n.c in Sources */ = {isa = PBXBuildFile; fileRef = C1451D701A9DA971008BDE72 /* js0n.c */; };
 		C1451D731A9DA971008BDE72 /* js0n.c in Sources */ = {isa = PBXBuildFile; fileRef = C1451D701A9DA971008BDE72 /* js0n.c */; };
 		C1451D761A9DBF6C008BDE72 /* jconf.c in Sources */ = {isa = PBXBuildFile; fileRef = C1451D751A9DBF6C008BDE72 /* jconf.c */; };
@@ -43,6 +44,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		C116758A1ABAC3D300A82E1B /* picohttpparser.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = picohttpparser.c; sourceTree = SOURCE_ROOT; };
+		C116758B1ABAC3D300A82E1B /* picohttpparser.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = picohttpparser.h; sourceTree = SOURCE_ROOT; };
 		C11EC93A1AA5770900E289C0 /* main.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = main.c; sourceTree = "<group>"; };
 		C11EC93F1AA5774A00E289C0 /* libz.1.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libz.1.dylib; path = ../../../../../../usr/local/lib/libz.1.dylib; sourceTree = "<group>"; };
 		C1451D701A9DA971008BDE72 /* js0n.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = js0n.c; sourceTree = SOURCE_ROOT; };
@@ -115,6 +118,8 @@
 		C1F153371A9C7C46009779D2 /* js-local */ = {
 			isa = PBXGroup;
 			children = (
+				C116758A1ABAC3D300A82E1B /* picohttpparser.c */,
+				C116758B1ABAC3D300A82E1B /* picohttpparser.h */,
 				C1451D701A9DA971008BDE72 /* js0n.c */,
 				C1451D711A9DA971008BDE72 /* js0n.h */,
 				C1F153481A9C7CE9009779D2 /* c_map.c */,
@@ -219,6 +224,7 @@
 				C1451D791A9DDB6F008BDE72 /* utils.c in Sources */,
 				C1451D761A9DBF6C008BDE72 /* jconf.c in Sources */,
 				C1F1534E1A9C7CE9009779D2 /* c_map.c in Sources */,
+				C116758C1ABAC3D300A82E1B /* picohttpparser.c in Sources */,
 				C1F1534F1A9C7CE9009779D2 /* local.c in Sources */,
 				C1451D721A9DA971008BDE72 /* js0n.c in Sources */,
 			);

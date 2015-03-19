@@ -38,6 +38,11 @@ typedef struct {
     uv_buf_t buf;
 } write_req_t;
 
+typedef struct {
+    uv_write_t req;
+    uv_buf_t buf[2];
+} write_req_2_t;    // for replacing 'Proxy-' in Proxy-Connection
+
 typedef struct
 {
 	uv_tcp_t server;
@@ -68,15 +73,20 @@ typedef struct socks_handshake
     uv_tcp_t server;
     int stage;
     char atyp;
+    int preinit;
+    int prestage;
     int init;
     int session_id;
     int closing;
     int closed;
+    int isHTTP;
     char addrlen;
     char host[256];	// to support ipv6
     char port[16];
     char* response;
     struct remote_ctx* remote_long;
+    char* request_buf;
+    int reques_buf_len;
     struct socks_handshake* prev;
     struct socks_handshake* next;
 } socks_handshake_t;
