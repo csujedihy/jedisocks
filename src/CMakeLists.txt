@@ -1,5 +1,5 @@
 SET(CMAKE_C_FLAGS "-std=gnu99 -g")
-SET(LOCAL_SRC_LIST local.c c_map.c js0n.c utils.c jconf.c)
+SET(LOCAL_SRC_LIST local.c c_map.c js0n.c utils.c jconf.c picohttpparser.c)
 SET(SERVER_SRC_LIST server.c c_map.c js0n.c utils.c jconf.c)
 ADD_EXECUTABLE(js-local ${LOCAL_SRC_LIST})
 ADD_EXECUTABLE(js-server ${SERVER_SRC_LIST})
