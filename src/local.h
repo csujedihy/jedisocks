@@ -74,7 +74,6 @@ typedef struct socks_handshake
     int stage;
     char atyp;
     int preinit;
-    int prestage;
     int init;
     int session_id;
     int closing;
@@ -87,6 +86,8 @@ typedef struct socks_handshake
     struct remote_ctx* remote_long;
     char* request_buf;
     int request_buf_len;
+    int content_length;
+    int remained_content;
     struct socks_handshake* prev;
     struct socks_handshake* next;
 } socks_handshake_t;
