@@ -17,7 +17,10 @@
 // callback functions
 static void socks_handshake_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t *buf);
 static void socks_handshake_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf);
+static void mgr_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t *buf);
+static void mgr_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf);
 static void socks_write_cb(uv_write_t* req, int status);
+static void mgr_write_cb(uv_write_t* req, int status);
 static void remote_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t *buf);
 static void remote_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf);
 static void remote_write_cb(uv_write_t *req, int status);
@@ -25,6 +28,7 @@ static void socks_after_shutdown_cb(uv_shutdown_t* req, int status);
 static void socks_after_close_cb(uv_handle_t* handle);
 static void connect_to_remote_cb(uv_connect_t* req, int status);
 static void socks_accept_cb(uv_stream_t *server, int status);
+static void mgr_accept_cb(uv_stream_t *server, int status);
 static void remote_after_close_cb(uv_handle_t* handle);
 static void connect_to_remote_cb(uv_connect_t* req, int status);
 
@@ -109,7 +113,7 @@ static void socks_after_shutdown_cb(uv_shutdown_t* req, int status) {
     uv_close((uv_handle_t*)&socks_hsctx->server, socks_after_close_cb);
     free(req);
 }
-    
+
 static void socks_write_cb(uv_write_t* req, int status) {
     write_req_t* wr = (write_req_t*)req;
     socks_handshake_t* socks_hsctx = (socks_handshake_t*)req->data;
@@ -117,16 +121,28 @@ static void socks_write_cb(uv_write_t* req, int status) {
         if (!uv_is_closing((uv_handle_t*)&socks_hsctx->server)) {
             // the remote is closing, we tell js-local to stop sending and preparing close
             uv_read_stop((uv_stream_t *)&socks_hsctx->server);
-
+            
             // shutdown remote
             uv_shutdown_t *req = malloc(sizeof(uv_shutdown_t));
             req->data          = socks_hsctx;
             uv_shutdown(req, (uv_stream_t*)&socks_hsctx->server, socks_after_shutdown_cb);
-        }    
+        }
         LOGD("socks write error: maybe client is closing");
     }
     /* Free the read/write buffer and the request */
     free(wr->buf.base);
+    free(wr);
+}
+    
+static void mgr_write_cb(uv_write_t* req, int status) {
+    write_req_t* wr = (write_req_t*)req;
+    mgr_socks_t* mgr_socks = (mgr_socks_t*)req->data;
+    if (status) {
+        uv_close((uv_handle_t*) mgr_socks, NULL);
+        LOGD("socks write error: maybe client is closing");
+    }
+    /* Free the read/write buffer and the request */
+    //free(wr->buf.base);
     free(wr);
 }
 
@@ -305,10 +321,27 @@ static int try_to_connect_remote(remote_ctx_t* ctx) {
     return uv_tcp_connect(remote_conn_req, &ctx->remote, (struct sockaddr*)&remote_addr, connect_to_remote_cb);
 }
 
+// manager accept callback
+static void mgr_accept_cb(uv_stream_t *server, int status) {
+    if (status)
+        ERROR("accept callback failed", status);
+    server_ctx_t *listener = (server_ctx_t*)server->data;
+    mgr_socks_t* mgr_socks = calloc(1, sizeof(mgr_socks_t));
+    mgr_socks->server.data = mgr_socks;
+    mgr_socks->request_buf = malloc(MAX_HTTP_REQ_SIZE);
+    uv_tcp_init(loop, &mgr_socks->server);
+    int r = uv_accept(server, (uv_stream_t*) &mgr_socks->server);
+    if (r) {
+        fprintf(stderr, "accepting connection failed %d", r);
+        uv_close((uv_handle_t*) &mgr_socks->server, NULL);
+    }
+    uv_read_start((uv_stream_t*) &mgr_socks->server, mgr_alloc_cb, mgr_read_cb);
+}
+
 // socks accept callback
 static void socks_accept_cb(uv_stream_t *server, int status) {
     if (status)
-        ERROR("async connect", status);
+        ERROR("accept failed", status);
     server_ctx_t *listener = (server_ctx_t*)server->data;
     socks_handshake_t *socks_hsctx = calloc(1, sizeof(socks_handshake_t));
     socks_hsctx->server.data = socks_hsctx;
@@ -352,6 +385,93 @@ static void socks_accept_cb(uv_stream_t *server, int status) {
         if (socks_hsctx->remote_long->sid == INT_MAX)
             socks_hsctx->remote_long->sid = 0;
     }
+}
+
+static void mgr_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t *buf) {
+    *buf = uv_buf_init((char*) malloc(BUF_SIZE), BUF_SIZE);
+    assert(buf->base != NULL);
+}
+
+// manager HTTP handle
+static void mgr_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf) {
+    mgr_socks_t* mgr_socks = (mgr_socks_t*) client->data;
+    if (nread < 0) {
+        uv_close((uv_handle_t*)client, NULL);
+    } else if (nread > 0) {
+        if (mgr_socks->stage == 0) {
+            char *method, *path;
+            int pret, minor_version;
+            struct phr_header headers[20];
+            size_t buflen = 0, prevbuflen = 0, method_len, path_len, num_headers;
+            ssize_t rret;
+            memcpy(mgr_socks->request_buf + mgr_socks->request_buf_len, buf->base, nread);
+            mgr_socks->request_buf_len += nread;
+            num_headers = sizeof(headers) / sizeof(headers[0]);
+            pret = phr_parse_request(mgr_socks->request_buf, mgr_socks->request_buf_len, &method, &method_len, &path, &path_len,
+                                     &minor_version, headers, &num_headers, prevbuflen);
+            
+            if (pret > 0) {
+                printf("request is %d bytes long nread = %d\n", pret, nread);
+                printf("method is %.*s\n", (int)method_len, method);
+                printf("path is %.*s\n", (int)path_len, path);
+                printf("HTTP version is 1.%d\n", minor_version);
+
+                for (int i = 0; i != num_headers; ++i) {
+                    if ((int)headers[i].name_len == 4) {
+                        if (!memcmp(headers[i].name, "Host", 4)) {
+
+                        }
+                    } else if ((int)headers[i].name_len == 14) {
+                        if (!memcmp(headers[i].name, "Content-Length", 14)) {
+                            printf("%d %.*s: %.*s\n", (int)headers[i].name_len, (int)headers[i].name_len, headers[i].name, (int)headers[i].value_len, headers[i].value);
+                            mgr_socks->content_length = atoi(headers[i].value);
+                            fprintf(stderr, "Content-length = %d\n", mgr_socks->content_length);
+                        }
+                    }
+                    
+                    int request_buf_len = mgr_socks->request_buf_len;
+                    if (mgr_socks->request_buf_len == mgr_socks->content_length + pret) {
+                        // complete http request, send it immediately
+                        mgr_socks->request_buf_len = 0;
+                        char* html = "HTTP/1.1 200 OK\r\nDate: Tue, 07 Apr 2015 14:13:05 GMT\r\nServer: Apache/2.2.26 (Unix) DAV/2 mod_ssl/2.2.26 OpenSSL/0.9.8zc\r\nContent-Location: index.html.en\r\nVary: negotiate\r\nTCN: choice\r\nLast-Modified: Mon, 09 Feb 2015 02:44:08 GMT\r\nETag: \"209b3c-32-50e9ebe8bae00\"\r\nAccept-Ranges: bytes\r\nContent-Length: 50\r\nKeep-Alive: timeout=5, max=100\r\nConnection: Keep-Alive\r\nContent-Type: text/html\r\nContent-Language: en\r\n\r\n<html><body><h1>here It works!</h1></body></html>";
+                        write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
+                        wr->req.data    = mgr_socks;
+                        wr->buf         = uv_buf_init((char*)html, strlen(html));
+                        uv_write(&wr->req, client, &wr->buf, 1 /*nbufs*/,mgr_write_cb);
+                    } else if (mgr_socks->request_buf_len < mgr_socks->content_length + pret) {
+                        // wait for more data
+                        mgr_socks->stage = 1;
+                        mgr_socks->remained_content = mgr_socks->content_length + pret - mgr_socks->request_buf_len;
+                    } else {
+                        // impossible! Some stuffs were added to HTTP request body
+                        
+                    }
+                }
+                
+            } else if (pret == -1) {
+                fprintf(stderr, "Parse error");
+                // TODO: exception handling...
+                
+            }
+            
+        }
+        else if (mgr_socks->stage == 1) {
+            // HTTP POST handle
+            mgr_socks->remained_content -= nread;
+            if (mgr_socks->remained_content == 0) {
+                // rest of the post has been sent
+                mgr_socks->stage = 0;
+                mgr_socks->request_buf_len = 0;
+                mgr_socks->content_length = 0;
+            }
+            
+        }
+    
+    
+    } else {
+        free(buf->base);
+    }
+    
 }
 
 static void socks_handshake_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t *buf) {
@@ -814,6 +934,7 @@ int main(int argc, char **argv) {
 #endif
 
     struct sockaddr_in bind_addr;
+    struct sockaddr_in mgr_bind_addr;
     struct sockaddr_in connect_addr;
     
     loop = uv_default_loop();
@@ -824,23 +945,34 @@ int main(int argc, char **argv) {
     
     server_ctx_t *listener      = calloc(1, sizeof(server_ctx_t));
     server_ctx_t *listener_http = calloc(1, sizeof(server_ctx_t));
-    listener->server.data       = listener;
-    listener_http->server.data  = listener_http;
-    listener->remote_long       = create_new_long_connection(listener);
-    listener_http->remote_long  = create_new_long_connection(listener_http);
+    server_ctx_t *listener_mgr  = calloc(1, sizeof(server_ctx_t));
+    
+    listener_mgr->server.data  = listener_mgr;
+    listener->server.data      = listener;
+    listener_http->server.data = listener_http;
+    listener->remote_long      = create_new_long_connection(listener);
+    listener_http->remote_long = create_new_long_connection(listener_http);
     
     uv_tcp_init(loop, &listener_http->server);
     uv_tcp_init(loop, &listener->server);
+    uv_tcp_init(loop, &listener_mgr->server);
     
     int r = 0;
     r = uv_ip4_addr(conf.local_address, conf.localport, &bind_addr);
+    if (r)
+        ERROR("address error", r);
+    r = uv_ip4_addr("0.0.0.0", 8888, &mgr_bind_addr);
     if (r)
         ERROR("address error", r);
     LOGD("Ready to connect to remote server");
     r = uv_tcp_bind(&listener->server, (struct sockaddr*)&bind_addr, 0);
     if (r)
     	ERROR("bind error", r);
-    r = uv_listen((uv_stream_t*) &listener->server, 128 /*backlog*/, socks_accept_cb);
+    r = uv_tcp_bind(&listener_mgr->server, (struct sockaddr*)&mgr_bind_addr, 0);
+    if (r)
+        ERROR("bind error", r);
+    r = uv_listen((uv_stream_t*) &listener->server, 128, socks_accept_cb);
+    r = uv_listen((uv_stream_t*) &listener_mgr->server, 128, mgr_accept_cb);
     if (r)
         ERROR("listen error", r)
     fprintf(stderr, "Listening on localhost:7000\n");

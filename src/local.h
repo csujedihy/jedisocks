@@ -25,6 +25,19 @@
 #define RC_ESTABLISHING 1
 #define RC_OK 2
 
+#define REQ_BUF_FIELDS                                                      \
+    char* request_buf;                                                      \
+    int request_buf_len;                                                    \
+    int content_length;                                                     \
+    int remained_content;                                                   \
+    int stage;
+
+#define HTTP_FIELDS                                                      \
+    int keep_alive;
+
+
+#define MAX_HTTP_REQ_SIZE 8*1024
+
 int compare_id (void* left, void* right) {
     if (*(uint32_t*)left == *(uint32_t*)right)
         return 0;
@@ -71,7 +84,6 @@ typedef struct tmp_packet {
 typedef struct socks_handshake
 {
     uv_tcp_t server;
-    int stage;
     char atyp;
     int preinit;
     int init;
@@ -84,13 +96,16 @@ typedef struct socks_handshake
     char port[16];
     char* response;
     struct remote_ctx* remote_long;
-    char* request_buf;
-    int request_buf_len;
-    int content_length;
-    int remained_content;
+    REQ_BUF_FIELDS
     struct socks_handshake* prev;
     struct socks_handshake* next;
 } socks_handshake_t;
+
+typedef struct mgr_socks {
+    uv_tcp_t server;
+    REQ_BUF_FIELDS
+    HTTP_FIELDS
+} mgr_socks_t;
 
 typedef struct socks_connection_list{
     socks_handshake_t head;
