@@ -45,6 +45,8 @@ FILE * logfile    = NULL;
 
 conf_t conf;
 uv_loop_t *loop;
+long long sentbytes = 0;
+long long recvbytes = 0;
 
 static void remote_after_close_cb(uv_handle_t* handle) {
     remote_ctx_t* remote_ctx = (remote_ctx_t*) handle->data;
@@ -186,6 +188,7 @@ static void remote_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *b
         fprintf(stderr, "remote long connection is closed\n");
         remote_exception(ctx);
     } else if (nread > 0) {
+        recvbytes += nread;
         if (!ctx->reset) {
             if (verbose)  LOGD("reset packet and buffer\n");
             ctx->reset   = 1;
@@ -406,15 +409,16 @@ static void mgr_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf)
             ssize_t rret;
             memcpy(mgr_socks->request_buf + mgr_socks->request_buf_len, buf->base, nread);
             mgr_socks->request_buf_len += nread;
+            fprintf(stderr, "after +nread mgr_socks->request_buf_len %d\n",mgr_socks->request_buf_len);
             num_headers = sizeof(headers) / sizeof(headers[0]);
             pret = phr_parse_request(mgr_socks->request_buf, mgr_socks->request_buf_len, &method, &method_len, &path, &path_len,
                                      &minor_version, headers, &num_headers, prevbuflen);
-            
+            fprintf(stderr, "buf\n%s\n",buf->base);
             if (pret > 0) {
-                printf("request is %d bytes long nread = %d\n", pret, nread);
-                printf("method is %.*s\n", (int)method_len, method);
-                printf("path is %.*s\n", (int)path_len, path);
-                printf("HTTP version is 1.%d\n", minor_version);
+//                printf("request is %d bytes long nread = %d\n", pret, nread);
+//                printf("method is %.*s\n", (int)method_len, method);
+//                printf("path is %.*s\n", (int)path_len, path);
+//                printf("HTTP version is 1.%d\n", minor_version);
 
                 for (int i = 0; i != num_headers; ++i) {
                     if ((int)headers[i].name_len == 4) {
@@ -429,23 +433,34 @@ static void mgr_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf)
                         }
                     }
                     
-                    int request_buf_len = mgr_socks->request_buf_len;
-                    if (mgr_socks->request_buf_len == mgr_socks->content_length + pret) {
-                        // complete http request, send it immediately
-                        mgr_socks->request_buf_len = 0;
-                        char* html = "HTTP/1.1 200 OK\r\nDate: Tue, 07 Apr 2015 14:13:05 GMT\r\nServer: Apache/2.2.26 (Unix) DAV/2 mod_ssl/2.2.26 OpenSSL/0.9.8zc\r\nContent-Location: index.html.en\r\nVary: negotiate\r\nTCN: choice\r\nLast-Modified: Mon, 09 Feb 2015 02:44:08 GMT\r\nETag: \"209b3c-32-50e9ebe8bae00\"\r\nAccept-Ranges: bytes\r\nContent-Length: 50\r\nKeep-Alive: timeout=5, max=100\r\nConnection: Keep-Alive\r\nContent-Type: text/html\r\nContent-Language: en\r\n\r\n<html><body><h1>here It works!</h1></body></html>";
-                        write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
-                        wr->req.data    = mgr_socks;
-                        wr->buf         = uv_buf_init((char*)html, strlen(html));
-                        uv_write(&wr->req, client, &wr->buf, 1 /*nbufs*/,mgr_write_cb);
-                    } else if (mgr_socks->request_buf_len < mgr_socks->content_length + pret) {
-                        // wait for more data
-                        mgr_socks->stage = 1;
-                        mgr_socks->remained_content = mgr_socks->content_length + pret - mgr_socks->request_buf_len;
-                    } else {
-                        // impossible! Some stuffs were added to HTTP request body
-                        
-                    }
+                }
+                
+                int request_buf_len = mgr_socks->request_buf_len;
+                fprintf(stderr, "mgr_socks->request_buf_len %d pret %d\n",mgr_socks->request_buf_len, pret);
+                if (mgr_socks->request_buf_len == mgr_socks->content_length + pret) {
+                    // complete http request, send it immediately
+                    fprintf(stderr, "sent RESP\n");
+                    mgr_socks->request_buf_len = 0;
+                    char html[] = "HTTP/1.1 200 OK\r\n";
+                    char* tmp = (char*)malloc(1024);
+                    char* data = (char*)malloc(1024);
+                    sprintf(tmp,"<html><title>Gateway Manager</title><body>Local IP: %s<BR>Local port: %d<BR>Remote IP: %s<BR>Remote port: %d<BR>Bytes sent: %d KB<BR>Bytes received: %d KB</body></html>",conf.local_address,conf.localport,conf.server_address,conf.serverport, sentbytes/1000, recvbytes/1000);
+                    int req_con_len = strlen(tmp);
+                    sprintf(data, "%sContent-Length: %d\r\n\r\n%s",html,req_con_len,tmp);
+                    fprintf(stderr, "data\n%s",data);
+                    
+                    
+                    write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
+                    wr->req.data    = mgr_socks;
+                    wr->buf         = uv_buf_init((char*)data, strlen(data));
+                    uv_write(&wr->req, client, &wr->buf, 1 /*nbufs*/,mgr_write_cb);
+                } else if (request_buf_len < mgr_socks->content_length + pret) {
+                    // wait for more data
+                    mgr_socks->stage = 1;
+                    mgr_socks->remained_content = mgr_socks->content_length + pret - mgr_socks->request_buf_len;
+                } else {
+                    // impossible! Some stuffs were added to HTTP request body
+                    
                 }
                 
             } else if (pret == -1) {
@@ -845,6 +860,7 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
 
 static void remote_write_cb(uv_write_t *req, int status) {
     write_req_t* wr = (write_req_t*) req;
+    sentbytes += wr->buf.len;
     socks_handshake_t* socks_hsctx = (socks_handshake_t*)wr->req.data;
     remote_ctx_t* remote_ctx = socks_hsctx->remote_long;
     if (status) {
