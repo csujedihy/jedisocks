@@ -30,6 +30,7 @@ static void connect_to_remote_cb(uv_connect_t* req, int status);
 static void socks_accept_cb(uv_stream_t *server, int status);
 static void mgr_accept_cb(uv_stream_t *server, int status);
 static void remote_after_close_cb(uv_handle_t* handle);
+static void mgr_after_close_cb(uv_handle_t* handle);
 static void connect_to_remote_cb(uv_connect_t* req, int status);
 
 // customized functions
@@ -47,6 +48,13 @@ conf_t conf;
 uv_loop_t *loop;
 long long sentbytes = 0;
 long long recvbytes = 0;
+
+static void mgr_after_close_cb(uv_handle_t* handle) {
+    fprintf(stderr, "manager connection closed!\n");
+    mgr_socks_t* mgr_socks = (mgr_socks_t*) handle->data;
+    free(mgr_socks->request_buf);
+    free(mgr_socks);
+}
 
 static void remote_after_close_cb(uv_handle_t* handle) {
     remote_ctx_t* remote_ctx = (remote_ctx_t*) handle->data;
@@ -81,8 +89,6 @@ static void send_EOF_packet(socks_handshake_t* socks_hsctx, remote_ctx_t* remote
     set_header(pkt_buf, &rsv, RSV_LEN, offset);
     set_header(pkt_buf, &datalen, DATALEN_LEN, offset);
     
-    //LOGD("session_id = %d session_idno = %d", ctx->session_id, session_id);
-
     write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
     wr->req.data = socks_hsctx;
     wr->buf = uv_buf_init(pkt_buf, EXP_TO_RECV_LEN);
@@ -140,11 +146,15 @@ static void mgr_write_cb(uv_write_t* req, int status) {
     write_req_t* wr = (write_req_t*)req;
     mgr_socks_t* mgr_socks = (mgr_socks_t*)req->data;
     if (status) {
-        uv_close((uv_handle_t*) mgr_socks, NULL);
-        LOGD("socks write error: maybe client is closing");
+        if (!uv_is_closing(&mgr_socks->server)) {
+            uv_read_stop((uv_stream_t*)&mgr_socks->server);
+            uv_close((uv_handle_t*) &mgr_socks->server, mgr_after_close_cb);
+            LOGD("socks write error: maybe client is closing");
+        }
     }
+    uv_close((uv_handle_t*) &mgr_socks->server, mgr_after_close_cb);
     /* Free the read/write buffer and the request */
-    //free(wr->buf.base);
+    free(wr->buf.base);
     free(wr);
 }
 
@@ -336,7 +346,7 @@ static void mgr_accept_cb(uv_stream_t *server, int status) {
     int r = uv_accept(server, (uv_stream_t*) &mgr_socks->server);
     if (r) {
         fprintf(stderr, "accepting connection failed %d", r);
-        uv_close((uv_handle_t*) &mgr_socks->server, NULL);
+        uv_close((uv_handle_t*) &mgr_socks->server, mgr_after_close_cb);
     }
     uv_read_start((uv_stream_t*) &mgr_socks->server, mgr_alloc_cb, mgr_read_cb);
 }
@@ -399,7 +409,10 @@ static void mgr_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t *buf) {
 static void mgr_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf) {
     mgr_socks_t* mgr_socks = (mgr_socks_t*) client->data;
     if (nread < 0) {
-        uv_close((uv_handle_t*)client, NULL);
+        if (!uv_is_closing(&mgr_socks->server)) {
+            uv_read_stop((uv_stream_t*)client);
+            uv_close((uv_handle_t*)client, mgr_after_close_cb);
+        }
     } else if (nread > 0) {
         if (mgr_socks->stage == 0) {
             char *method, *path;
@@ -415,11 +428,7 @@ static void mgr_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf)
                                      &minor_version, headers, &num_headers, prevbuflen);
             fprintf(stderr, "buf\n%s\n",buf->base);
             if (pret > 0) {
-//                printf("request is %d bytes long nread = %d\n", pret, nread);
-//                printf("method is %.*s\n", (int)method_len, method);
-//                printf("path is %.*s\n", (int)path_len, path);
-//                printf("HTTP version is 1.%d\n", minor_version);
-
+              
                 for (int i = 0; i != num_headers; ++i) {
                     if ((int)headers[i].name_len == 4) {
                         if (!memcmp(headers[i].name, "Host", 4)) {
@@ -441,18 +450,18 @@ static void mgr_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf)
                     // complete http request, send it immediately
                     fprintf(stderr, "sent RESP\n");
                     mgr_socks->request_buf_len = 0;
-                    char html[] = "HTTP/1.1 200 OK\r\n";
                     char* tmp = (char*)malloc(1024);
                     char* data = (char*)malloc(1024);
-                    sprintf(tmp,"<html><title>Gateway Manager</title><body>Local IP: %s<BR>Local port: %d<BR>Remote IP: %s<BR>Remote port: %d<BR>Bytes sent: %d KB<BR>Bytes received: %d KB</body></html>",conf.local_address,conf.localport,conf.server_address,conf.serverport, sentbytes/1000, recvbytes/1000);
-                    int req_con_len = strlen(tmp);
-                    sprintf(data, "%sContent-Length: %d\r\n\r\n%s",html,req_con_len,tmp);
+                    sprintf(tmp,"<html><title>Gateway Manager</title><body>Local IP: %s<BR>Local port: %d<BR>Remote IP: %s<BR>Remote port: %d<BR>Bytes sent: %ld KB<BR>Bytes received: %ld KB</body></html>",conf.local_address,conf.localport,conf.server_address,conf.serverport, sentbytes/1000, recvbytes/1000);
+                    
+                    int req_con_len = (unsigned int)strlen(tmp);
+                    sprintf(data, "HTTP/1.1 200 OK\r\nContent-Length: %d\r\n\r\n%s",req_con_len,tmp);
+                    free(tmp);
                     fprintf(stderr, "data\n%s",data);
-                    
-                    
+      
                     write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
                     wr->req.data    = mgr_socks;
-                    wr->buf         = uv_buf_init((char*)data, strlen(data));
+                    wr->buf         = uv_buf_init((char*)data, (unsigned int)strlen(data));
                     uv_write(&wr->req, client, &wr->buf, 1 /*nbufs*/,mgr_write_cb);
                 } else if (request_buf_len < mgr_socks->content_length + pret) {
                     // wait for more data
@@ -466,7 +475,6 @@ static void mgr_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf)
             } else if (pret == -1) {
                 fprintf(stderr, "Parse error");
                 // TODO: exception handling...
-                
             }
             
         }
@@ -479,13 +487,10 @@ static void mgr_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf)
                 mgr_socks->request_buf_len = 0;
                 mgr_socks->content_length = 0;
             }
-            
         }
-    
-    
-    } else {
-        free(buf->base);
     }
+    if (buf->len > 0)
+        free(buf->base);
     
 }
 
@@ -619,7 +624,7 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
                             // complete http request, send it immediately
                             socks_hsctx->request_buf_len = 0;
                             
-                        } else if (socks_hsctx->request_buf_len < socks_hsctx->content_length + pret) {
+                        } else if (request_buf_len < socks_hsctx->content_length + pret) {
                             // wait for more data
                             socks_hsctx->stage = 1;
                             socks_hsctx->remained_content = socks_hsctx->content_length + pret - socks_hsctx->request_buf_len;

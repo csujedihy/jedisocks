@@ -20,7 +20,7 @@ extern FILE * logfile;
 #define ERROR(msg, code) do {                                                         \
   fprintf(stderr, "%s: [%s: %s]\n", msg, uv_err_name((code)), uv_strerror((code)));   \
   assert(0);                                                                          \
-} while(0);
+} while (0)
 
 #define LOGD(format, ...)   \
     do {    \
