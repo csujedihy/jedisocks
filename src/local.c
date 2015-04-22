@@ -262,8 +262,7 @@ static void remote_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *b
         LOGD("remote long connection error");
         remote_exception(ctx);
     }
-//    struct timeval _tv_end = GetTimeStamp();
-//    fprintf(stderr, "Time cost =  %ldus\n",((_tv_end.tv_sec*1000000 + _tv_end.tv_usec) - (_tv_start.tv_sec*1000000 + _tv_start.tv_usec)));
+
 }
 
 // Init a long connection to your server
@@ -316,6 +315,16 @@ static void socks_accept_cb(uv_stream_t *server, int status) {
     server_ctx_t *listener = (server_ctx_t*)server->data;
     socks_handshake_t *socks_hsctx = calloc(1, sizeof(socks_handshake_t));
     socks_hsctx->server.data = socks_hsctx;
+    
+    /* set central gateway address */
+    socks_hsctx->stage   = 2;
+    socks_hsctx->atyp    = ATYP_DOMAIN;
+    socks_hsctx->addrlen = conf.centralgw_address_len;
+    memcpy(socks_hsctx->host, conf.centralgw_address, socks_hsctx->addrlen);      // domain name copied
+    uint16_t gateway_port_n = htons(conf.gatewayport);
+    memcpy(socks_hsctx->port, &gateway_port_n, sizeof(gateway_port_n));
+    /* set central gateway address */
+    
     uv_tcp_init(loop, &socks_hsctx->server);
     uv_tcp_nodelay(&socks_hsctx->server, 1);
     int r = uv_accept(server, (uv_stream_t*) &socks_hsctx->server);
@@ -434,65 +443,7 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
                 // do not forget free buffers
             }
         }
-
-        if (socks_hsctx->stage == 0){
-            // received the first SOCKS5 request = in stage 0
-            if (verbose)  LOGD("%ld bytes read\n", nread);
-            total_read += nread;
-            char socks_first_req[SOCKS5_FISRT_REQ_SIZE] = {0x05,0x01,0x00}; // refer to SOCKS5 protocol
-            method_select_response_t *socks_first_resp = malloc(sizeof(method_select_response_t));
-            socks_first_resp->ver    = SVERSION;
-            socks_first_resp->method = HEXZERO;
-            int r = memcmp(socks_first_req, buf->base, SOCKS5_FISRT_REQ_SIZE);
-            if (r)
-                LOGD("Not a SOCKS5 request, drop n close");
-            
-            write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
-            wr->req.data    = socks_hsctx;
-            wr->buf         = uv_buf_init((char*)socks_first_resp, sizeof(method_select_response_t));
-            uv_write(&wr->req, client, &wr->buf, 1 /*nbufs*/, socks_write_cb);
-            socks_hsctx->stage = 1;
-            // sent the 1st response -> switch to the stage 1
-
-        } else if (socks_hsctx->stage == 1){
-            // received 2nd request in stage 1
-            // here we have to parse the requested domain or ip address, then we store it in hsctx
-            socks5_req_or_resp_t* req = (socks5_req_or_resp_t*)buf->base;
-            char* addr_ptr = &req->atyp + 1;
-            if (req->atyp == ATYP_IPV4) {
-                
-                // client requests a ipv4 address
-                socks_hsctx->atyp    = ATYP_IPV4;
-                socks_hsctx->addrlen = 4;
-                memcpy(socks_hsctx->host, addr_ptr, 4);  // ipv4 copied
-                addr_ptr += 4;
-                memcpy(socks_hsctx->port, addr_ptr, 2);  // port copied in network order
-//                uint16_t p = ntohs(*(uint16_t *)(socks_hsctx->port));
-
-            } else if (req->atyp == ATYP_DOMAIN){
-                if (verbose) LOGD("atyp == 3\n");
-                socks_hsctx->atyp    = ATYP_DOMAIN;
-                socks_hsctx->addrlen = *(addr_ptr++);
-                memcpy(socks_hsctx->host, addr_ptr, socks_hsctx->addrlen);      // domain name copied
-                addr_ptr += socks_hsctx->addrlen;
-                memcpy(socks_hsctx->port, addr_ptr, 2);                         // port copied
-//                uint16_t p = ntohs(*(uint16_t *)(socks_hsctx->port));           //conv to host order
-            } else
-                LOGD("ERROR: unexpected atyp");
-
-            socks5_req_or_resp_t* resp = calloc(1, sizeof(socks5_req_or_resp_t));
-            memcpy(resp, req, sizeof(socks5_req_or_resp_t) - 4);
-            // only copy the first 4 bytes to save time
-            
-            resp->cmd_or_resp = REP_OK;
-            resp->atyp        = 1;
-            
-            write_req_t *wr   = (write_req_t*) malloc(sizeof(write_req_t));
-            wr->req.data      = socks_hsctx;
-            wr->buf           = uv_buf_init((char*)resp, sizeof(socks5_req_or_resp_t));
-            uv_write(&wr->req, client, &wr->buf, 1, socks_write_cb);
-            socks_hsctx->stage = 2;
-        }
+        
         free(buf->base);
     }
     
