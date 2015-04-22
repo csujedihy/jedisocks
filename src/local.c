@@ -323,6 +323,7 @@ static void socks_accept_cb(uv_stream_t *server, int status) {
     memcpy(socks_hsctx->host, conf.centralgw_address, socks_hsctx->addrlen);      // domain name copied
     uint16_t gateway_port_n = htons(conf.gatewayport);
     memcpy(socks_hsctx->port, &gateway_port_n, sizeof(gateway_port_n));
+    fprintf(stderr, "about gateway:\nport(n) = %d address = %s\n", socks_hsctx->port, socks_hsctx->host);
     /* set central gateway address */
     
     uv_tcp_init(loop, &socks_hsctx->server);
