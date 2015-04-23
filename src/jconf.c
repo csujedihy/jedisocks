@@ -32,9 +32,9 @@ void read_conf(char* configfile, conf_t* conf) {
     char* aaa = "127.0.0.1";
     char* val = NULL;
     char* configbuf = NULL;
-    char localport_buf[6] = {0};
-    char serverport_buf[6] = {0};
-    char gatewayport_buf[6] = {0};
+    char localport_buf[6]    = {0};
+    char serverport_buf[6]   = {0};
+    char gatewayport_buf[6]  = {0};
     char backend_mode_buf[6] = {0};
     int vlen = 0;
     FILE *f = fopen(configfile, "rb");

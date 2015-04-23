@@ -7,6 +7,14 @@
 #include <unistd.h>
 extern FILE * logfile;
 
+#if __GNUC__ >= 3
+# define likely(x) __builtin_expect(!!(x), 1)
+# define unlikely(x) __builtin_expect(!!(x), 0)
+#else
+# define likely(x) (x)
+# define unlikely(x) (x)
+#endif
+
 #define TIME_FORMAT "%Y-%m-%d %H:%M:%S"
 #define COLORDEF_GREEM \e[01;32m
 #define COLORDEF_WHITE \e[0m

@@ -101,8 +101,12 @@ static void remote_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t *buf) {
 
 static void remote_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
     remote_ctx_t* ctx = (remote_ctx_t*)stream->data;
-    if (nread == UV_EOF) {
-        LOGD("remote_read_cb: UV_EOF");
+    if (unlikely(nread <= 0)) {
+        LOGD("remote_read_cb: nread <= 0");
+        if (buf.len)
+            free(buf->base);
+        if (nread == 0)
+            return;
         //uv_close((uv_handle_t*) stream, NULL);
         ctx->connected = 0;
         if (!uv_is_closing((uv_handle_t*)&ctx->remote)) {
@@ -116,7 +120,7 @@ static void remote_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
         }
         //now handle remote close
         // for debug
-    } else if (nread > 0) {
+    } else {
         server_ctx_t* server_ctx = ctx->server_ctx;
         int offset = 0;
         char* pkt_buf       = calloc(1, ID_LEN + RSV_LEN + DATALEN_LEN + nread);
@@ -140,7 +144,6 @@ static void remote_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
         uv_write(&req->req, (uv_stream_t*)&ctx->server_ctx->server, &req->buf, 1, server_write_cb);
         jfree(buf->base);
     }
-    if (nread == 0) jfree(buf->base);
 }
 
 static void server_write_cb(uv_write_t *req, int status) {
@@ -304,8 +307,9 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
 //    struct timeval _tv_start = GetTimeStamp();
     LOGD("hehe nread = %d", nread);
     
-//    LOGD("server_read_cb: ==============================start============================");
-	if (nread == UV_EOF) {
+    // TODO: optimize long remote connection handling logic
+    LOGD("server_read_cb: ==============================start============================");
+	if (unlikely(nread == UV_EOF)) {
 		uv_close((uv_handle_t*) stream, NULL);
 	} else if (nread > 0) {
         server_ctx_t* ctx = (server_ctx_t*)stream->data;
@@ -470,8 +474,6 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
         }
 	}
     LOGD("server_read_cb: ==============================end==============================\n");
-//    struct timeval _tv_end = GetTimeStamp();
-//    fprintf(stderr, "Time cost =  %ldus\n",((_tv_end.tv_sec*1000000 + _tv_end.tv_usec) - (_tv_start.tv_sec*1000000 + _tv_start.tv_usec)));
 }
 
 int main(int argc, char **argv)

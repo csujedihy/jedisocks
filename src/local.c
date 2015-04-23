@@ -69,7 +69,7 @@ static void send_EOF_packet(socks_handshake_t* socks_hsctx, remote_ctx_t* remote
 static void socks_after_close_cb(uv_handle_t* handle) {
     LOGD("socks_after_close_cb");
     socks_handshake_t *socks_hsctx = (socks_handshake_t *)handle->data;
-    if (socks_hsctx != NULL) {
+    if (likely(socks_hsctx != NULL)) {
         if (socks_hsctx->remote_long != NULL)
             send_EOF_packet(socks_hsctx, socks_hsctx->remote_long);
         socks_hsctx->closed++;
@@ -113,12 +113,6 @@ static void socks_write_cb(uv_write_t* req, int status) {
     free(wr);
 }
 
-static void remote_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t *buf) {
-    remote_ctx_t* ctx = (remote_ctx_t*)handle->data;
-    *buf = uv_buf_init(ctx->recv_buffer, ctx->expect_to_recv);
-    assert(buf->base != NULL);
-}
-
 static void remote_exception(remote_ctx_t* remote_ctx) {
     fprintf(stderr, "remote_exception captured\n");
     uv_read_stop((uv_stream_t *)&remote_ctx->remote);
@@ -146,24 +140,30 @@ static void remote_exception(remote_ctx_t* remote_ctx) {
     }
 }
 
+static void remote_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t *buf) {
+    remote_ctx_t* ctx = (remote_ctx_t*)handle->data;
+    *buf = uv_buf_init(ctx->recv_buffer, ctx->expect_to_recv);
+    assert(buf->base != NULL);
+}
+
 static void remote_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf) {
     fprintf(stderr, "remote_read_cb called\n");
     remote_ctx_t* ctx = (remote_ctx_t*)client->data;
-//    struct timeval _tv_start = GetTimeStamp();
     if (verbose) LOGD("nread = %d\n", nread);
-    if (nread < 0) {
+    if (unlikely(nread <= 0)) {
+        if (nread == 0)
+            return;
         if (!uv_is_closing((uv_handle_t*)client)) {
             fprintf(stderr, "remote long connection is closed or error\n");
             remote_exception(ctx);
         }
 
-    } else if (nread > 0) {
+    } else {
         if (!ctx->reset) {
             if (verbose)  LOGD("reset packet and buffer\n");
             ctx->reset   = 1;
             ctx->buf_len = 0;
             ctx->offset  = 0;
-//            struct timeval _tv_start = GetTimeStamp();
             memset(ctx->packet_buf, 0, MAX_PKT_SIZE);
             memset(&ctx->tmp_packet, 0, sizeof(tmp_packet_t));
             ctx->stage = 0;
@@ -176,7 +176,7 @@ static void remote_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *b
 
         // TODO: fix the expected to recv buffer size
         if (ctx->stage == 0) {
-            if (ctx->buf_len == HDR_LEN) {
+            if (likely(ctx->buf_len == HDR_LEN)) {
                 get_header(&ctx->tmp_packet.session_id, ctx->packet_buf, ID_LEN, ctx->offset);
                 ctx->tmp_packet.session_id = ntohl((uint32_t)ctx->tmp_packet.session_id);
                 LOGD("session_id = %d\n", ctx->tmp_packet.session_id);
@@ -319,7 +319,7 @@ static void socks_accept_cb(uv_stream_t *server, int status) {
         fprintf(stderr, "accepting connection failed %d", r);
         uv_close((uv_handle_t*) &socks_hsctx->server, NULL);
     }
-    if (listener->remote_long != NULL) {
+    if (likely(listener->remote_long != NULL)) {
         remote_ctx_t* remote_ctx = listener->remote_long;
         list_add_to_tail(&remote_ctx->managed_socks_list, socks_hsctx);
         socks_hsctx->remote_long = remote_ctx;
@@ -355,7 +355,11 @@ static void socks_handshake_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t 
 
 static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf) {
     if (verbose)  LOGD("nread = %d", nread);
-    if (nread == UV_EOF) {
+    if (unlikely(nread <= 0)) {
+        if (buf.len)
+            free(buf->base);
+        if (nread == 0)
+            return;
         socks_handshake_t *socks_hsctx = client->data;
         socks_hsctx->closing = 1;
         if (!uv_is_closing((uv_handle_t*)&socks_hsctx->server)) {
@@ -366,12 +370,13 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
             uv_shutdown_t *req = malloc(sizeof(uv_shutdown_t));
             req->data = socks_hsctx;
             uv_shutdown(req, (uv_stream_t*)&socks_hsctx->server, socks_after_shutdown_cb);
-        }        
+        }
+        
         // for debug
         LOGD("A socks5 connection is closed\n");
-    } else if (nread > 0) {
+    } else {
         socks_handshake_t *socks_hsctx = client->data;
-        if (socks_hsctx->stage == 2) {
+        if (likely(socks_hsctx->stage == 2)) {
             if (!socks_hsctx->init) {
                 socks_hsctx->init = 1;
                 int offset = 0;
@@ -482,7 +487,7 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
             // only copy the first 4 bytes to save time
             
             resp->cmd_or_resp = REP_OK;
-            resp->atyp        = 1;
+            resp->atyp        = ATYPE_OK;
             
             write_req_t *wr   = (write_req_t*) malloc(sizeof(write_req_t));
             wr->req.data      = socks_hsctx;
@@ -493,8 +498,6 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
         
         free(buf->base);
     }
-    
-    if (nread == 0) free(buf->base);
 }
 
 static void remote_write_cb(uv_write_t *req, int status) {
