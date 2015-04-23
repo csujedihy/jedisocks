@@ -1,4 +1,4 @@
-SET(CMAKE_C_FLAGS "-std=gnu99 -g")
+SET(CMAKE_C_FLAGS "-std=gnu99 -g -O2")
 SET(LOCAL_SRC_LIST local.c c_map.c js0n.c utils.c jconf.c)
 SET(SERVER_SRC_LIST server.c c_map.c js0n.c utils.c jconf.c)
 ADD_EXECUTABLE(js-local ${LOCAL_SRC_LIST})
