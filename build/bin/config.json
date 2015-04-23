@@ -1,8 +1,9 @@
 {
-    "local_address":"192.168.0.173",
+    "local_address":"0.0.0.0",
     "server":"192.168.0.200",
     "server_port":7001,
     "local_port":7000,
     "gateway_port":80,
     "gateway_address":"192.168.0.200"
+    "backend_mode":0
 }
