@@ -81,13 +81,14 @@ void read_conf(char* configfile, conf_t* conf) {
     if (val != NULL) {
         conf->centralgw_address = (char*)malloc(vlen);
         memcpy(conf->centralgw_address, val, vlen);
-        conf->centralgw_address = vlen;
+        conf->centralgw_address_len = vlen;
     }
     
     val = js0n("gateway_port", strlen("gateway_port"), configbuf, (int)pos, &vlen);
     if (val != NULL) {
         memcpy(gatewayportbuf, val, vlen);
         conf->gatewayport = atoi(gatewayportbuf);
+        fprintf(stderr, "Forward to gateway port %d\n", conf->gatewayport);
     }
     
     val = js0n("local_address", 13, configbuf, (int)pos, &vlen);

@@ -268,15 +268,16 @@ static void remote_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *b
 // Init a long connection to your server
 static void connect_to_remote_cb(uv_connect_t* req, int status) {
     remote_ctx_t* ctx = (remote_ctx_t *)req->data;
+    req->handle->data = ctx;
+    struct clib_map* map = new_c_map(compare_id, NULL, NULL);
+    ctx->idfd_map        = map;
     if (status) {
         fprintf(stderr, "connect error\n");
         remote_exception(ctx);
         free(req);
         return;
     }
-    req->handle->data = ctx;
-    struct clib_map* map = new_c_map(compare_id, NULL, NULL);
-    ctx->idfd_map        = map;
+
     uv_read_start(req->handle, remote_alloc_cb, remote_read_cb);
     
     /* visit all SOCKS5 context and tell them to start reading bufs*/
@@ -323,7 +324,7 @@ static void socks_accept_cb(uv_stream_t *server, int status) {
     memcpy(socks_hsctx->host, conf.centralgw_address, socks_hsctx->addrlen);      // domain name copied
     uint16_t gateway_port_n = htons(conf.gatewayport);
     memcpy(socks_hsctx->port, &gateway_port_n, sizeof(gateway_port_n));
-    fprintf(stderr, "about gateway:\nport(n) = %d address = %s\n", socks_hsctx->port, socks_hsctx->host);
+    fprintf(stderr, "about gateway:\nport(n) = %d address_len = %d address = %s\n", ntohs(socks_hsctx->port), socks_hsctx->addrlen, socks_hsctx->host);
     /* set central gateway address */
     
     uv_tcp_init(loop, &socks_hsctx->server);
@@ -337,6 +338,7 @@ static void socks_accept_cb(uv_stream_t *server, int status) {
         remote_ctx_t* remote_ctx = listener->remote_long;
         list_add_to_tail(&remote_ctx->managed_socks_list, socks_hsctx);
         socks_hsctx->remote_long = remote_ctx;
+        
         switch (remote_ctx->connected) {
             case RC_OFF:
                 try_to_connect_remote(remote_ctx);
@@ -355,6 +357,10 @@ static void socks_accept_cb(uv_stream_t *server, int status) {
         try_to_connect_remote(listener->remote_long);
         socks_hsctx->remote_long = listener->remote_long;
     }
+    socks_hsctx->session_id = ++socks_hsctx->remote_long->sid;
+    insert_c_map (socks_hsctx->remote_long->idfd_map, &socks_hsctx->session_id, sizeof(int), socks_hsctx, sizeof(int));
+    if (socks_hsctx->remote_long->sid == INT_MAX)
+        socks_hsctx->remote_long->sid = 0;
 }
 
 static void socks_handshake_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t *buf) {
@@ -382,11 +388,7 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
         socks_handshake_t *socks_hsctx = client->data;
         if (socks_hsctx->stage == 2) {
             if (!socks_hsctx->init) {
-                socks_hsctx->init       = 1;
-                socks_hsctx->session_id = ++socks_hsctx->remote_long->sid;
-                insert_c_map (socks_hsctx->remote_long->idfd_map, &socks_hsctx->session_id, sizeof(int), socks_hsctx, sizeof(int));
-                if (socks_hsctx->remote_long->sid == INT_MAX)
-                    socks_hsctx->remote_long->sid = 0;
+                socks_hsctx->init = 1;
                 int offset = 0;
                 char* pkt_buf = malloc(ID_LEN + RSV_LEN + DATALEN_LEN + ATYP_LEN + ADDRLEN_LEN \
                                         + socks_hsctx->addrlen + PORT_LEN + nread);
@@ -485,7 +487,7 @@ static remote_ctx_t* create_new_long_connection(server_ctx_t* listener){
 
 int main(int argc, char **argv) {
     memset(&conf, '\0', sizeof(conf));
-#ifndef DEBUG
+#ifndef DEBUGX
     int c, option_index = 0;
     char* configfile = NULL;
     opterr = 0;
@@ -571,7 +573,7 @@ int main(int argc, char **argv) {
     	ERROR("bind error", r);
     r = uv_listen((uv_stream_t*) &listener->server, 128 /*backlog*/, socks_accept_cb);
     if (r)
-        ERROR("listen error", r)
+        ERROR("listen error port", r);
     fprintf(stderr, "Listening on localhost:7000\n");
     uv_run(loop, UV_RUN_DEFAULT);
     CLOSE_LOGFILE;
