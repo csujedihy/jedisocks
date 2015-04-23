@@ -164,9 +164,12 @@ static void remote_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *b
     remote_ctx_t* ctx = (remote_ctx_t*)client->data;
 //    struct timeval _tv_start = GetTimeStamp();
     if (verbose) LOGD("nread = %d\n", nread);
-    if (nread == UV_EOF) {
-        fprintf(stderr, "remote long connection is closed\n");
-        remote_exception(ctx);
+    if (nread < 0) {
+        if (!uv_is_closing((uv_handle_t*)client)) {
+            fprintf(stderr, "remote long connection is closed or error\n");
+            remote_exception(ctx);
+        }
+
     } else if (nread > 0) {
         if (!ctx->reset) {
             if (verbose)  LOGD("reset packet and buffer\n");
@@ -258,10 +261,6 @@ static void remote_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *b
             }
         }
     }
-    if (nread < 0) {
-        LOGD("remote long connection error");
-        remote_exception(ctx);
-    }
 
 }
 
@@ -277,9 +276,7 @@ static void connect_to_remote_cb(uv_connect_t* req, int status) {
         free(req);
         return;
     }
-
     uv_read_start(req->handle, remote_alloc_cb, remote_read_cb);
-    
     /* visit all SOCKS5 context and tell them to start reading bufs*/
     socks_handshake_t* curr = NULL;
     for (curr = list_get_start(&ctx->managed_socks_list);
@@ -288,12 +285,9 @@ static void connect_to_remote_cb(uv_connect_t* req, int status) {
         if (curr != NULL)
             uv_read_start((uv_stream_t*) &curr->server, socks_handshake_alloc_cb,
                           socks_handshake_read_cb);
-        
     }
-    
     ctx->connected = RC_OK;
     fprintf(stderr, "Connected to remote\n");
-    
 }   
 
 static int try_to_connect_remote(remote_ctx_t* ctx) {
@@ -324,7 +318,7 @@ static void socks_accept_cb(uv_stream_t *server, int status) {
     memcpy(socks_hsctx->host, conf.centralgw_address, socks_hsctx->addrlen);      // domain name copied
     uint16_t gateway_port_n = htons(conf.gatewayport);
     memcpy(socks_hsctx->port, &gateway_port_n, sizeof(gateway_port_n));
-    fprintf(stderr, "about gateway:\nport(n) = %d address_len = %d address = %s\n", ntohs(socks_hsctx->port), socks_hsctx->addrlen, socks_hsctx->host);
+//    fprintf(stderr, "about gateway:\nport(n) = %d address_len = %d address = %s\n", (int)ntohs(*(uint16_t*)socks_hsctx->port), socks_hsctx->addrlen, socks_hsctx->host);
     /* set central gateway address */
     
     uv_tcp_init(loop, &socks_hsctx->server);
@@ -412,7 +406,7 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
                  + ADDRLEN_LEN + socks_hsctx->addrlen + PORT_LEN + nread);
                 
                 write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
-                wr->req.data    = socks_hsctx;
+                wr->req.data    = socks_hsctx->remote_long;
                 wr->buf         = uv_buf_init(pkt_buf, ID_LEN + RSV_LEN + DATALEN_LEN + ATYP_LEN \
                  + ADDRLEN_LEN + socks_hsctx->addrlen + PORT_LEN + nread);
                 uv_write(&wr->req, (uv_stream_t*)&socks_hsctx->remote_long->remote, &wr->buf, 1, remote_write_cb);
@@ -440,7 +434,7 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
                 
                 // to add a pointer to refer to long remote connection
                 write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
-                wr->req.data = socks_hsctx;
+                wr->req.data    = socks_hsctx->remote_long;
                 wr->buf = uv_buf_init(pkt_buf, ID_LEN + RSV_LEN + DATALEN_LEN + nread);
                 uv_write(&wr->req, (uv_stream_t*)&socks_hsctx->remote_long->remote, &wr->buf, 1, remote_write_cb);
                 // do not forget free buffers
@@ -455,11 +449,12 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
 
 static void remote_write_cb(uv_write_t *req, int status) {
     write_req_t* wr = (write_req_t*) req;
-    socks_handshake_t* socks_hsctx = (socks_handshake_t*)wr->req.data;
-    remote_ctx_t* remote_ctx = socks_hsctx->remote_long;
+    remote_ctx_t* remote_ctx = req->data;
     if (status) {
-        LOGD("async write, maybe long remote connection is broken %d", status);
-        remote_exception(remote_ctx);
+        if (!uv_is_closing((uv_handle_t*)&remote_ctx->remote)) {
+            LOGD("async write, maybe long remote connection is broken %d", status);
+            remote_exception(remote_ctx);
+        }
     }
     assert(wr->req.type == UV_WRITE);
     /* Free the read/write buffer and the request */
