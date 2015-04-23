@@ -103,7 +103,7 @@ static void remote_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
     remote_ctx_t* ctx = (remote_ctx_t*)stream->data;
     if (unlikely(nread <= 0)) {
         LOGD("remote_read_cb: nread <= 0");
-        if (buf.len)
+        if (buf->len)
             free(buf->base);
         if (nread == 0)
             return;

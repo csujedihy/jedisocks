@@ -356,7 +356,7 @@ static void socks_handshake_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t 
 static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf) {
     if (verbose)  LOGD("nread = %d", nread);
     if (unlikely(nread <= 0)) {
-        if (buf.len)
+        if (buf->len)
             free(buf->base);
         if (nread == 0)
             return;
