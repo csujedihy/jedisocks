@@ -77,7 +77,7 @@ static void send_EOF_packet(socks_handshake_t* socks_hsctx, remote_ctx_t* remote
     write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
     wr->req.data = socks_hsctx;
     wr->buf = uv_buf_init(pkt_buf, EXP_TO_RECV_LEN);
-    uv_write(&wr->req, (uv_stream_t*)&remote_ctx->remote, &wr->buf, 1, socks_write_cb);
+    uv_write(&wr->req, (uv_stream_t*)&remote_ctx->remote, &wr->buf, 1, remote_write_cb);
 }
 
 // this will cause corruption because remote_ctx_long is not existed.
@@ -108,6 +108,7 @@ static void socks_after_shutdown_cb(uv_shutdown_t* req, int status) {
 }
     
 static void socks_write_cb(uv_write_t* req, int status) {
+    fprintf(stderr, "socks write\n");
     write_req_t* wr = (write_req_t*)req;
     socks_handshake_t* socks_hsctx = (socks_handshake_t*)req->data;
     if (status) {
@@ -161,6 +162,7 @@ static void remote_exception(remote_ctx_t* remote_ctx) {
 }
 
 static void remote_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf) {
+    fprintf(stderr, "remote_read_cb called\n");
     remote_ctx_t* ctx = (remote_ctx_t*)client->data;
 //    struct timeval _tv_start = GetTimeStamp();
     if (verbose) LOGD("nread = %d\n", nread);
@@ -213,7 +215,7 @@ static void remote_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *b
                             LOGD("session %d is removed from session map and ctx is freed", exist_ctx->session_id);
                             if (exist_ctx->remote_long != NULL)
                                 remove_c_map(exist_ctx->remote_long->idfd_map, &exist_ctx->session_id, NULL);
-                            free(exist_ctx);
+                                free(exist_ctx);
                             // add session id to idle session id list
                         }
                         
@@ -238,9 +240,11 @@ static void remote_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *b
             if (ctx->buf_len == HDR_LEN + ctx->tmp_packet.datalen) {
                 ctx->reset = 0;
                 if (verbose)  LOGD("data enough\n");
+                fprintf(stderr, "stage = 1, remote_read_cb\n");
                 socks_handshake_t* socks = NULL;
                 if (find_c_map(ctx->idfd_map, &ctx->tmp_packet.session_id, &socks))
                 {
+                    fprintf(stderr, "remote_read_ready_to_write\n");
                     socks->response = malloc(ctx->tmp_packet.datalen);
                     get_payload(socks->response, ctx->packet_buf, ctx->tmp_packet.datalen, ctx->offset);
                     write_req_t* wr = malloc(sizeof(write_req_t));
@@ -268,8 +272,6 @@ static void remote_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *b
 static void connect_to_remote_cb(uv_connect_t* req, int status) {
     remote_ctx_t* ctx = (remote_ctx_t *)req->data;
     req->handle->data = ctx;
-    struct clib_map* map = new_c_map(compare_id, NULL, NULL);
-    ctx->idfd_map        = map;
     if (status) {
         fprintf(stderr, "connect error\n");
         remote_exception(ctx);
@@ -283,8 +285,11 @@ static void connect_to_remote_cb(uv_connect_t* req, int status) {
          !list_elem_is_end(&ctx->managed_socks_list, curr);
          curr = curr->next) {
         if (curr != NULL)
+        {
             uv_read_start((uv_stream_t*) &curr->server, socks_handshake_alloc_cb,
                           socks_handshake_read_cb);
+            fprintf(stderr, "read start\n");
+        }
     }
     ctx->connected = RC_OK;
     fprintf(stderr, "Connected to remote\n");
@@ -318,7 +323,6 @@ static void socks_accept_cb(uv_stream_t *server, int status) {
     memcpy(socks_hsctx->host, conf.centralgw_address, socks_hsctx->addrlen);      // domain name copied
     uint16_t gateway_port_n = htons(conf.gatewayport);
     memcpy(socks_hsctx->port, &gateway_port_n, sizeof(gateway_port_n));
-//    fprintf(stderr, "about gateway:\nport(n) = %d address_len = %d address = %s\n", (int)ntohs(*(uint16_t*)socks_hsctx->port), socks_hsctx->addrlen, socks_hsctx->host);
     /* set central gateway address */
     
     uv_tcp_init(loop, &socks_hsctx->server);
@@ -474,6 +478,8 @@ static remote_ctx_t* create_new_long_connection(server_ctx_t* listener){
     remote_ctx_long->remote.data    = remote_ctx_long;
     remote_ctx_long->listen         = listener;
     remote_ctx_long->connected      = RC_OFF;
+    struct clib_map* map = new_c_map(compare_id, NULL, NULL);
+    remote_ctx_long->idfd_map        = map;
     uv_tcp_init(loop, &remote_ctx_long->remote);
     list_init(&remote_ctx_long->managed_socks_list);
     uv_tcp_nodelay(&remote_ctx_long->remote, 1);
