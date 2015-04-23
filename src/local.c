@@ -42,21 +42,6 @@ uv_loop_t *loop;
 static void remote_after_close_cb(uv_handle_t* handle) {
     remote_ctx_t* remote_ctx = (remote_ctx_t*) handle->data;
     delete_c_map(remote_ctx->idfd_map);
-    /*
-    socks_handshake_t* curr = NULL;
-    for (curr = list_get_start(&remote_ctx->managed_socks_list);
-         !list_elem_is_end(&remote_ctx->managed_socks_list, curr);
-         curr = curr->next) {
-        if (curr != NULL) {
-            if (!uv_is_closing((uv_handle_t*) &curr->server)) {
-                curr->remote_long = NULL;
-                uv_shutdown_t *req = malloc(sizeof(uv_shutdown_t));
-                req->data = curr;
-                uv_shutdown(req, (uv_stream_t*)&curr->server, socks_after_shutdown_cb);
-            }
-        }
-    }
-    */
     remote_ctx->listen->remote_long = NULL;
     free(remote_ctx);
 }
@@ -317,7 +302,7 @@ static void socks_accept_cb(uv_stream_t *server, int status) {
     socks_hsctx->server.data = socks_hsctx;
     
     /* set central gateway address */
-    if (conf->backend_mode) {
+    if (conf.backend_mode) {
         socks_hsctx->stage   = 2;
         socks_hsctx->atyp    = ATYP_DOMAIN;
         socks_hsctx->addrlen = conf.centralgw_address_len;
@@ -446,6 +431,65 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
                 // do not forget free buffers
             }
         }
+
+        if (socks_hsctx->stage == 0){
+            
+            // received the first SOCKS5 request = in stage 0
+            if (verbose)  LOGD("%ld bytes read\n", nread);
+            total_read += nread;
+            char socks_first_req[SOCKS5_FISRT_REQ_SIZE] = {0x05,0x01,0x00}; // refer to SOCKS5 protocol
+            method_select_response_t *socks_first_resp = malloc(sizeof(method_select_response_t));
+            socks_first_resp->ver    = SVERSION;
+            socks_first_resp->method = HEXZERO;
+            int r = memcmp(socks_first_req, buf->base, SOCKS5_FISRT_REQ_SIZE);
+            if (r)
+                LOGD("Not a SOCKS5 request, drop n close");
+            
+            write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
+            wr->req.data    = socks_hsctx;
+            wr->buf         = uv_buf_init((char*)socks_first_resp, sizeof(method_select_response_t));
+            uv_write(&wr->req, client, &wr->buf, 1 /*nbufs*/, socks_write_cb);
+            socks_hsctx->stage = 1;
+            // sent the 1st response -> switch to the stage 1
+            
+        } else if (socks_hsctx->stage == 1){
+            // received 2nd request in stage 1
+            // here we have to parse the requested domain or ip address, then we store it in hsctx
+            socks5_req_or_resp_t* req = (socks5_req_or_resp_t*)buf->base;
+            char* addr_ptr = &req->atyp + 1;
+            if (req->atyp == ATYP_IPV4) {
+                
+                // client requests a ipv4 address
+                socks_hsctx->atyp    = ATYP_IPV4;
+                socks_hsctx->addrlen = 4;
+                memcpy(socks_hsctx->host, addr_ptr, 4);  // ipv4 copied
+                addr_ptr += 4;
+                memcpy(socks_hsctx->port, addr_ptr, 2);  // port copied in network order
+                //                uint16_t p = ntohs(*(uint16_t *)(socks_hsctx->port));
+                
+            } else if (req->atyp == ATYP_DOMAIN){
+                if (verbose) LOGD("atyp == 3\n");
+                socks_hsctx->atyp    = ATYP_DOMAIN;
+                socks_hsctx->addrlen = *(addr_ptr++);
+                memcpy(socks_hsctx->host, addr_ptr, socks_hsctx->addrlen);      // domain name copied
+                addr_ptr += socks_hsctx->addrlen;
+                memcpy(socks_hsctx->port, addr_ptr, 2);                         // port copied
+            } else
+                LOGD("ERROR: unexpected atyp");
+            
+            socks5_req_or_resp_t* resp = calloc(1, sizeof(socks5_req_or_resp_t));
+            memcpy(resp, req, sizeof(socks5_req_or_resp_t) - 4);
+            // only copy the first 4 bytes to save time
+            
+            resp->cmd_or_resp = REP_OK;
+            resp->atyp        = 1;
+            
+            write_req_t *wr   = (write_req_t*) malloc(sizeof(write_req_t));
+            wr->req.data      = socks_hsctx;
+            wr->buf           = uv_buf_init((char*)resp, sizeof(socks5_req_or_resp_t));
+            uv_write(&wr->req, client, &wr->buf, 1, socks_write_cb);
+            socks_hsctx->stage = 2;
+        }
         
         free(buf->base);
     }
@@ -475,8 +519,6 @@ static remote_ctx_t* create_new_long_connection(server_ctx_t* listener){
         FATAL("Not enough memory");
     }
     remote_ctx_long->expect_to_recv = HDR_LEN;
-//    uv_connect_t *req = (uv_connect_t *)calloc(1, sizeof(uv_connect_t));
-//    req->data = remote_ctx_long;
     remote_ctx_long->remote.data    = remote_ctx_long;
     remote_ctx_long->listen         = listener;
     remote_ctx_long->connected      = RC_OFF;
