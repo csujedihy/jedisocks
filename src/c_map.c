@@ -156,7 +156,7 @@ __right_rotate(struct clib_rb* pTree, struct clib_rb_node* x) {
 struct clib_rb*
 new_c_rb(clib_compare fn_c,clib_destroy fn_ed, clib_destroy fn_vd ){
 
-    struct clib_rb* pTree = (struct clib_rb*)malloc(sizeof(struct clib_rb));
+    struct clib_rb* pTree = (struct clib_rb*)calloc(1,sizeof(struct clib_rb));
     if ( pTree == (struct clib_rb*)0 )
         return (struct clib_rb*)0;
 
