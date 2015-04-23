@@ -13,11 +13,16 @@
 #include <stdint.h>
 #include <string.h>
 #include <strings.h>
+
 typedef struct {
     uint16_t localport;
     uint16_t serverport;
+    uint16_t gatewayport;
     char* server_address;
     char* local_address;
+    char* centralgw_address;
+    uint32_t centralgw_address_len;
+    int backend_mode;
 } conf_t;
 
 extern void read_conf(char* configfile, conf_t* conf);

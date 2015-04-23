@@ -478,7 +478,6 @@ int main(int argc, char **argv)
 {
     conf_t  conf;
     memset(&conf, 0, sizeof(conf_t));
-#ifndef DEBUG
     int c, option_index = 0;
     char* configfile = NULL;
     opterr = 0;
@@ -522,15 +521,11 @@ int main(int argc, char **argv)
 
     if (opterr || argc == 1 || conf.serverport == NULL) {
         printf("Error: 1)passed wrong or null args to the program.\n");
-        printf("       2)parse config file failed.\n");
+        printf("       2)parsing config file failed.\n");
         usage();
         exit(EXIT_FAILURE);
     }
     
-    //LOGD("la = %s ra = %s lp = %d rp = %d", conf.local_address, conf.server_address, conf.localport, conf.serverport);
-#else
-    conf.serverport = 7001;
-#endif
     server_validate_conf(&conf);
     loop = uv_default_loop();
     char* serverlog = "/tmp/server.log";

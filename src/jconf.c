@@ -32,8 +32,10 @@ void read_conf(char* configfile, conf_t* conf) {
     char* aaa = "127.0.0.1";
     char* val = NULL;
     char* configbuf = NULL;
-    char localportbuf[6] = {0};
-    char serverportbuf[6] = {0};
+    char localport_buf[6] = {0};
+    char serverport_buf[6] = {0};
+    char gatewayport_buf[6] = {0};
+    char backend_mode_buf[6] = {0};
     int vlen = 0;
     FILE *f = fopen(configfile, "rb");
     if (f == NULL) {
@@ -59,28 +61,51 @@ void read_conf(char* configfile, conf_t* conf) {
 
     val = js0n("server_port", strlen("server_port"), configbuf, (int)pos, &vlen);
     if (val != NULL) {
-        memcpy(serverportbuf, val, vlen);
-        conf->serverport = atoi(serverportbuf);
+        memcpy(serverport_buf, val, vlen);
+        conf->serverport = atoi(serverport_buf);
     }
     
     val = js0n("local_port", strlen("local_port"), configbuf, (int)pos, &vlen);
     if (val != NULL) {
-        memcpy(localportbuf, val, vlen);
-        conf->localport = atoi(localportbuf);
+        memcpy(localport_buf, val, vlen);
+        conf->localport = atoi(localport_buf);
     }
     
-    val = js0n("server", 6, configbuf, (int)pos, &vlen);
+    val = js0n("server", strlen("server"), configbuf, (int)pos, &vlen);
     if (val != NULL) {
-        
         conf->server_address = (char*)malloc(vlen + 1);
         memcpy(conf->server_address, val, vlen);
         conf->server_address[vlen] = '\0';
     }
     
-    val = js0n("local_address", 13, configbuf, (int)pos, &vlen);
+    val = js0n("local_address", strlen("local_address"), configbuf, (int)pos, &vlen);
     if (val != NULL) {
         conf->local_address = (char*)malloc(vlen + 1);
         memcpy(conf->local_address, val, vlen);
         conf->local_address[vlen] = '\0';
     }
+    
+    val = js0n("backend_mode", strlen("backend_mode"), configbuf, (int)pos, &vlen);
+    if (val != NULL) {
+        memcpy(backend_mode_buf, val, vlen);
+        conf->backend_mode = atoi(backend_mode_buf);
+        fprintf(stderr, "Backend mode = %d (1 = ON, 0 = OFF)\n", conf->backend_mode);
+        if (!conf->backend_mode)
+            return;
+    }
+    
+    val = js0n("gateway_address", strlen("gateway_address"), configbuf, (int)pos, &vlen);
+    if (val != NULL) {
+        conf->centralgw_address = (char*)malloc(vlen);
+        memcpy(conf->centralgw_address, val, vlen);
+        conf->centralgw_address_len = vlen;
+    }
+    
+    val = js0n("gateway_port", strlen("gateway_port"), configbuf, (int)pos, &vlen);
+    if (val != NULL) {
+        memcpy(gatewayport_buf, val, vlen);
+        conf->gatewayport = atoi(gatewayport_buf);
+        fprintf(stderr, "Forward to gateway:%d\n", conf->gatewayport);
+    }
+    
 }
