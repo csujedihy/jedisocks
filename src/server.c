@@ -279,7 +279,7 @@ static void remote_addr_resolved_cb(uv_getaddrinfo_t *resolver, int status, stru
 }
 
 static void server_accept_cb(uv_stream_t *server, int status) {
-	if (status) ERROR("async connect", status);
+	if (status) ERROR_UV("async connect", status);
 	server_ctx_t* ctx = calloc(1, sizeof(server_ctx_t));
     ctx->server.data = ctx;
     ctx->expect_to_recv = HDRLEN;
@@ -542,10 +542,10 @@ int main(int argc, char **argv)
 	int r = uv_ip4_addr(conf.server_address, conf.serverport, &bind_addr);
     r = uv_tcp_bind(&listener->handle, (struct sockaddr*)&bind_addr, 0);
 	if (r < 0)
-        ERROR("js-server: bind error", r);
+        ERROR_UV("js-server: bind error", r);
 	r = uv_listen((uv_stream_t*)&listener->handle, 128, server_accept_cb);
 	if (r)
-        ERROR("js-server: listen error", r);
+        ERROR_UV("js-server: listen error", r);
 	fprintf(stderr, "js-server: listen on %s:%d\n", conf.server_address, conf.serverport);
 	uv_run(loop, UV_RUN_DEFAULT);
     CLOSE_LOGFILE;
