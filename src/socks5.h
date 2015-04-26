@@ -26,7 +26,7 @@
 #define REP_OK 0
 #define SVERSION 0x05
 #define CONNECT 0x01
-#define ATYPE_OK 0x01
+#define ATYP_OK 0x01
 #define ATYP_IPV4 0x01
 #define ATYP_DOMAIN 0x03
 #define IPV6 0x04

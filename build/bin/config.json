@@ -4,6 +4,6 @@
     "server_port":7001,
     "local_port":7000,
     "gateway_port":80,
-    "gateway_address":"192.168.0.200"
+    "gateway_address":"192.168.0.200",
     "backend_mode":0
 }

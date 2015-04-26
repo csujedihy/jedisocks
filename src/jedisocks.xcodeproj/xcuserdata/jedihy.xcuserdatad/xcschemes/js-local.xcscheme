@@ -59,7 +59,7 @@
       </BuildableProductRunnable>
       <CommandLineArguments>
          <CommandLineArgument
-            argument = "-c &quot;/Users/jedihy/Documents/Project/jedisocks/build/bin/config.json&quot;"
+            argument = "-c &quot;/Users/jedihy/Documents/Project/jedisocks_config/config.json&quot;"
             isEnabled = "YES">
          </CommandLineArgument>
       </CommandLineArguments>

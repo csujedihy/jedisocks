@@ -93,7 +93,6 @@ static void socks_after_shutdown_cb(uv_shutdown_t* req, int status) {
 }
     
 static void socks_write_cb(uv_write_t* req, int status) {
-    fprintf(stderr, "socks write\n");
     write_req_t* wr = (write_req_t*)req;
     socks_handshake_t* socks_hsctx = (socks_handshake_t*)req->data;
     if (status) {
@@ -147,7 +146,6 @@ static void remote_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t *buf) {
 }
 
 static void remote_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *buf) {
-    fprintf(stderr, "remote_read_cb called\n");
     remote_ctx_t* ctx = (remote_ctx_t*)client->data;
     if (verbose) LOGD("nread = %d\n", nread);
     if (unlikely(nread <= 0)) {
@@ -225,11 +223,9 @@ static void remote_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *b
             if (ctx->buf_len == HDR_LEN + ctx->tmp_packet.datalen) {
                 ctx->reset = 0;
                 if (verbose)  LOGD("data enough\n");
-                fprintf(stderr, "stage = 1, remote_read_cb\n");
                 socks_handshake_t* socks = NULL;
                 if (find_c_map(ctx->idfd_map, &ctx->tmp_packet.session_id, &socks))
                 {
-                    fprintf(stderr, "remote_read_ready_to_write\n");
                     socks->response = malloc(ctx->tmp_packet.datalen);
                     get_payload(socks->response, ctx->packet_buf, ctx->tmp_packet.datalen, ctx->offset);
                     write_req_t* wr = malloc(sizeof(write_req_t));
@@ -487,7 +483,7 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
             // only copy the first 4 bytes to save time
             
             resp->cmd_or_resp = REP_OK;
-            resp->atyp        = ATYPE_OK;
+            resp->atyp        = ATYP_OK;
             
             write_req_t *wr   = (write_req_t*) malloc(sizeof(write_req_t));
             wr->req.data      = socks_hsctx;
@@ -535,7 +531,6 @@ static remote_ctx_t* create_new_long_connection(server_ctx_t* listener){
 
 int main(int argc, char **argv) {
     memset(&conf, '\0', sizeof(conf));
-#ifndef DEBUGX
     int c, option_index = 0;
     char* configfile = NULL;
     opterr = 0;
@@ -582,14 +577,6 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
     
-    //USE_LOGFILE(locallog);
-#else
-    conf.localport      = 7000;
-    conf.serverport     = 7001;
-    conf.server_address = "127.0.0.1";
-    conf.local_address  = "0.0.0.0";
-#endif
-
     struct sockaddr_in bind_addr;
     struct sockaddr_in connect_addr;
     
