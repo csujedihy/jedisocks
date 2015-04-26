@@ -26,7 +26,7 @@ static void remote_after_close_cb(uv_handle_t* handle);
 static void connect_to_remote_cb(uv_connect_t* req, int status);
 
 // customized functions
-static remote_ctx_t* create_new_long_connection(server_ctx_t* listener);
+static remote_ctx_t* create_new_long_connection(server_ctx_t* listener, int );
 static void remote_exception(remote_ctx_t* remote_ctx);
 static void send_EOF_packet(socks_handshake_t* socks_hsctx, remote_ctx_t* remote_ctx);
 
@@ -42,7 +42,7 @@ uv_loop_t *loop;
 static void remote_after_close_cb(uv_handle_t* handle) {
     remote_ctx_t* remote_ctx = (remote_ctx_t*) handle->data;
     delete_c_map(remote_ctx->idfd_map);
-    remote_ctx->listen->remote_long = NULL;
+    remote_ctx->listen->remote_long[remote_ctx->rc_index] = create_new_long_connection(remote_ctx->listen, remote_ctx->rc_index);
     free(remote_ctx);
 }
 
@@ -269,7 +269,7 @@ static void connect_to_remote_cb(uv_connect_t* req, int status) {
         {
             uv_read_start((uv_stream_t*) &curr->server, socks_handshake_alloc_cb,
                           socks_handshake_read_cb);
-            fprintf(stderr, "read start\n");
+            fprintf(stderr, "socks read start\n");
         }
     }
     ctx->connected = RC_OK;
@@ -291,6 +291,8 @@ static int try_to_connect_remote(remote_ctx_t* ctx) {
 
 // socks accept callback
 static void socks_accept_cb(uv_stream_t *server, int status) {
+    static int round_robin_index = 0;
+    fprintf(stderr, "round_robin_index = %d\n", round_robin_index);
     if (status)
         ERROR("async connect", status);
     server_ctx_t *listener = (server_ctx_t*)server->data;
@@ -315,8 +317,9 @@ static void socks_accept_cb(uv_stream_t *server, int status) {
         fprintf(stderr, "accepting connection failed %d", r);
         uv_close((uv_handle_t*) &socks_hsctx->server, NULL);
     }
-    if (likely(listener->remote_long != NULL)) {
-        remote_ctx_t* remote_ctx = listener->remote_long;
+    if (likely(listener->remote_long[round_robin_index] != NULL)) {
+
+        remote_ctx_t* remote_ctx = listener->remote_long[round_robin_index];
         list_add_to_tail(&remote_ctx->managed_socks_list, socks_hsctx);
         socks_hsctx->remote_long = remote_ctx;
         
@@ -331,17 +334,24 @@ static void socks_accept_cb(uv_stream_t *server, int status) {
             case RC_ESTABLISHING:
                 break;
         }
+        
+        socks_hsctx->session_id = ++socks_hsctx->remote_long->sid;
+        insert_c_map (socks_hsctx->remote_long->idfd_map, &socks_hsctx->session_id, sizeof(int), socks_hsctx, sizeof(int));
+        if (socks_hsctx->remote_long->sid == INT_MAX)
+            socks_hsctx->remote_long->sid = 0;
     }
-    else {
-        listener->remote_long = create_new_long_connection(listener);
-        list_add_to_tail(&listener->remote_long->managed_socks_list, socks_hsctx);
-        try_to_connect_remote(listener->remote_long);
-        socks_hsctx->remote_long = listener->remote_long;
-    }
-    socks_hsctx->session_id = ++socks_hsctx->remote_long->sid;
-    insert_c_map (socks_hsctx->remote_long->idfd_map, &socks_hsctx->session_id, sizeof(int), socks_hsctx, sizeof(int));
-    if (socks_hsctx->remote_long->sid == INT_MAX)
-        socks_hsctx->remote_long->sid = 0;
+//    else {
+//        listener->remote_long = create_new_long_connection(listener);
+//        list_add_to_tail(&listener->remote_long->managed_socks_list, socks_hsctx);
+//        try_to_connect_remote(listener->remote_long);
+//        socks_hsctx->remote_long = listener->remote_long;
+//    }
+//
+    
+    if (++round_robin_index == listener->rc_pool_size)
+        round_robin_index = 0;
+    
+
 }
 
 static void socks_handshake_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t *buf) {
@@ -396,12 +406,13 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
                 if (verbose) LOGD("now here is buf\n");
                 if (verbose) SHOW_BUFFER(buf->base, ID_LEN + RSV_LEN + DATALEN_LEN + ATYP_LEN \
                  + ADDRLEN_LEN + socks_hsctx->addrlen + PORT_LEN + nread);
-                
-                write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
-                wr->req.data    = socks_hsctx->remote_long;
-                wr->buf         = uv_buf_init(pkt_buf, ID_LEN + RSV_LEN + DATALEN_LEN + ATYP_LEN \
-                 + ADDRLEN_LEN + socks_hsctx->addrlen + PORT_LEN + nread);
-                uv_write(&wr->req, (uv_stream_t*)&socks_hsctx->remote_long->remote, &wr->buf, 1, remote_write_cb);
+                if (socks_hsctx->remote_long != NULL) {
+                    write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
+                    wr->req.data    = socks_hsctx->remote_long;
+                    wr->buf         = uv_buf_init(pkt_buf, ID_LEN + RSV_LEN + DATALEN_LEN + ATYP_LEN \
+                     + ADDRLEN_LEN + socks_hsctx->addrlen + PORT_LEN + nread);
+                    uv_write(&wr->req, (uv_stream_t*)&socks_hsctx->remote_long->remote, &wr->buf, 1, remote_write_cb);
+                }
                 // do not forget freeing buffers
             }
             else
@@ -425,10 +436,12 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
                 if (verbose) SHOW_BUFFER(pkt_buf, nread);
                 
                 // to add a pointer to refer to long remote connection
-                write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
-                wr->req.data    = socks_hsctx->remote_long;
-                wr->buf = uv_buf_init(pkt_buf, ID_LEN + RSV_LEN + DATALEN_LEN + nread);
-                uv_write(&wr->req, (uv_stream_t*)&socks_hsctx->remote_long->remote, &wr->buf, 1, remote_write_cb);
+                if (socks_hsctx->remote_long != NULL) {
+                    write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
+                    wr->req.data    = socks_hsctx->remote_long;
+                    wr->buf = uv_buf_init(pkt_buf, ID_LEN + RSV_LEN + DATALEN_LEN + nread);
+                    uv_write(&wr->req, (uv_stream_t*)&socks_hsctx->remote_long->remote, &wr->buf, 1, remote_write_cb);
+                }
                 // do not forget free buffers
             }
         }
@@ -511,12 +524,12 @@ static void remote_write_cb(uv_write_t *req, int status) {
     free(wr);
 }
 
-static remote_ctx_t* create_new_long_connection(server_ctx_t* listener){
-    remote_ctx_t* remote_ctx_long;
-    remote_ctx_long = calloc(1, sizeof(remote_ctx_t));
+static remote_ctx_t* create_new_long_connection(server_ctx_t* listener, int index){
+    remote_ctx_t* remote_ctx_long = calloc(1, sizeof(remote_ctx_t));
     if (remote_ctx_long == NULL) {
         FATAL("Not enough memory");
     }
+    remote_ctx_long->rc_index = index;
     remote_ctx_long->expect_to_recv = HDR_LEN;
     remote_ctx_long->remote.data    = remote_ctx_long;
     remote_ctx_long->listen         = listener;
@@ -585,16 +598,14 @@ int main(int argc, char **argv) {
     
     if (log_to_file)
         USE_LOGFILE(locallog);
-    
     server_ctx_t *listener      = calloc(1, sizeof(server_ctx_t));
-    server_ctx_t *listener_http = calloc(1, sizeof(server_ctx_t));
     listener->server.data       = listener;
-    listener_http->server.data  = listener_http;
-    listener->remote_long       = create_new_long_connection(listener);
-    listener_http->remote_long  = create_new_long_connection(listener_http);
+    listener->rc_pool_size = 5;
+    list_init(&listener->unused_rc_queue);
+    for (int i = 0; i < listener->rc_pool_size; ++i) {
+        listener->remote_long[i] = create_new_long_connection(listener, i);
+    }
     
-    uv_tcp_init(loop, &listener_http->server);
-    uv_tcp_nodelay(&listener_http->server, 1);
     uv_tcp_init(loop, &listener->server);
     uv_tcp_nodelay(&listener->server, 1);
     
