@@ -294,7 +294,7 @@ static void socks_accept_cb(uv_stream_t *server, int status) {
     static int round_robin_index = 0;
     fprintf(stderr, "round_robin_index = %d\n", round_robin_index);
     if (status)
-        ERROR("async connect", status);
+        ERROR_UV("async connect", status);
     server_ctx_t *listener = (server_ctx_t*)server->data;
     socks_handshake_t *socks_hsctx = calloc(1, sizeof(socks_handshake_t));
     socks_hsctx->server.data = socks_hsctx;
@@ -544,6 +544,7 @@ static remote_ctx_t* create_new_long_connection(server_ctx_t* listener, int inde
 
 int main(int argc, char **argv) {
     memset(&conf, '\0', sizeof(conf));
+    conf.pool_size = 5;    // default pool size = 5
     int c, option_index = 0;
     char* configfile = NULL;
     opterr = 0;
@@ -552,9 +553,11 @@ int main(int argc, char **argv) {
         {0, 0, 0, 0}
     };
     
-    while ((c = getopt_long(argc, argv, "c:r:l:p:P:V",
+    while ((c = getopt_long(argc, argv, "c:r:l:p:P:V:n",
                             long_options, &option_index)) != -1) {
         switch (c) {
+            case 'n':
+                conf.pool_size = atoi(optarg);
             case 'c':
                 configfile = optarg;
                 break;
@@ -600,8 +603,11 @@ int main(int argc, char **argv) {
         USE_LOGFILE(locallog);
     server_ctx_t *listener      = calloc(1, sizeof(server_ctx_t));
     listener->server.data       = listener;
-    listener->rc_pool_size = 5;
+    listener->rc_pool_size = conf.pool_size;
     list_init(&listener->unused_rc_queue);
+    if (listener->rc_pool_size > MAX_RC_NUM)
+        ERROR("too large pool size!");
+    fprintf(stderr, "Connection Pool size = %d\n", conf.pool_size);
     for (int i = 0; i < listener->rc_pool_size; ++i) {
         listener->remote_long[i] = create_new_long_connection(listener, i);
     }
@@ -612,14 +618,14 @@ int main(int argc, char **argv) {
     int r = 0;
     r = uv_ip4_addr(conf.local_address, conf.localport, &bind_addr);
     if (r)
-        ERROR("address error", r);
+        ERROR_UV("address error", r);
     LOGD("Ready to connect to remote server");
     r = uv_tcp_bind(&listener->server, (struct sockaddr*)&bind_addr, 0);
     if (r)
-    	ERROR("bind error", r);
+    	ERROR_UV("bind error", r);
     r = uv_listen((uv_stream_t*) &listener->server, 128 /*backlog*/, socks_accept_cb);
     if (r)
-        ERROR("listen error port", r);
+        ERROR_UV("listen error port", r);
     fprintf(stderr, "Listening on localhost:7000\n");
     uv_run(loop, UV_RUN_DEFAULT);
     CLOSE_LOGFILE;

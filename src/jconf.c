@@ -36,7 +36,9 @@ void read_conf(char* configfile, conf_t* conf) {
     char serverport_buf[6]   = {0};
     char gatewayport_buf[6]  = {0};
     char backend_mode_buf[6] = {0};
+    char pool_size_buf[6]    = {0};
     int vlen = 0;
+    
     FILE *f = fopen(configfile, "rb");
     if (f == NULL) {
         FATAL("Invalid config path.");
@@ -83,6 +85,12 @@ void read_conf(char* configfile, conf_t* conf) {
         conf->local_address = (char*)malloc(vlen + 1);
         memcpy(conf->local_address, val, vlen);
         conf->local_address[vlen] = '\0';
+    }
+    
+    val = js0n("pool_size", strlen("pool_size"), configbuf, (int)pos, &vlen);
+    if (val != NULL) {
+        memcpy(pool_size_buf, val, vlen);
+        conf->pool_size = atoi(pool_size_buf);
     }
     
     val = js0n("backend_mode", strlen("backend_mode"), configbuf, (int)pos, &vlen);
