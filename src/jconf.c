@@ -97,7 +97,6 @@ void read_conf(char* configfile, conf_t* conf) {
     if (val != NULL) {
         memcpy(backend_mode_buf, val, vlen);
         conf->backend_mode = atoi(backend_mode_buf);
-        fprintf(stderr, "Backend mode = %d (1 = ON, 0 = OFF)\n", conf->backend_mode);
         if (!conf->backend_mode)
             return;
     }

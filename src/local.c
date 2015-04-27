@@ -113,7 +113,7 @@ static void socks_write_cb(uv_write_t* req, int status) {
 }
 
 static void remote_exception(remote_ctx_t* remote_ctx) {
-    fprintf(stderr, "remote_exception captured\n");
+    LOGW("Freeing remote long connection...");
     uv_read_stop((uv_stream_t *)&remote_ctx->remote);
     if (!uv_is_closing((uv_handle_t*)&remote_ctx->remote)) {
         struct clib_iterator *socks_map_itr = NULL;
@@ -254,7 +254,7 @@ static void connect_to_remote_cb(uv_connect_t* req, int status) {
     remote_ctx_t* ctx = (remote_ctx_t *)req->data;
     req->handle->data = ctx;
     if (status) {
-        fprintf(stderr, "connect error\n");
+        LOGW("Failed to connect to remote gateway");
         remote_exception(ctx);
         free(req);
         return;
@@ -269,15 +269,14 @@ static void connect_to_remote_cb(uv_connect_t* req, int status) {
         {
             uv_read_start((uv_stream_t*) &curr->server, socks_handshake_alloc_cb,
                           socks_handshake_read_cb);
-            fprintf(stderr, "socks read start\n");
         }
     }
     ctx->connected = RC_OK;
-    fprintf(stderr, "Connected to remote\n");
+    LOGI("Connected to gateway (pool connection id: %d)", ctx->rc_index);
 }   
 
 static int try_to_connect_remote(remote_ctx_t* ctx) {
-    fprintf(stderr, "try to connect to remote\n");
+    LOGI("Try to connect to remote (pool connection id: %d)", ctx->rc_index);
     struct sockaddr_in remote_addr;
     memset(&remote_addr, 0, sizeof(remote_addr));
     int r = uv_ip4_addr(conf.server_address, conf.serverport, &remote_addr);
@@ -292,7 +291,6 @@ static int try_to_connect_remote(remote_ctx_t* ctx) {
 // socks accept callback
 static void socks_accept_cb(uv_stream_t *server, int status) {
     static int round_robin_index = 0;
-    fprintf(stderr, "round_robin_index = %d\n", round_robin_index);
     if (status)
         ERROR_UV("async connect", status);
     server_ctx_t *listener = (server_ctx_t*)server->data;
@@ -585,7 +583,10 @@ int main(int argc, char **argv) {
     if (configfile != NULL) {
         read_conf(configfile, &conf);
     }
-
+    
+    LOGI("Backend mode = %d (1 = ON, 0 = OFF)", conf.backend_mode);
+    LOGI("Connection Pool size = %d", conf.pool_size);
+    
     if (opterr || argc == 1 || conf.serverport == NULL || conf.server_address == NULL || conf.localport == NULL || conf.local_address == NULL) {
         printf("Error: 1) pass wrong or null args to the program.\n");
         printf("       2) parse config file failed.\n");
@@ -607,7 +608,6 @@ int main(int argc, char **argv) {
     list_init(&listener->unused_rc_queue);
     if (listener->rc_pool_size > MAX_RC_NUM)
         ERROR("too large pool size!");
-    fprintf(stderr, "Connection Pool size = %d\n", conf.pool_size);
     for (int i = 0; i < listener->rc_pool_size; ++i) {
         listener->remote_long[i] = create_new_long_connection(listener, i);
     }
@@ -626,7 +626,7 @@ int main(int argc, char **argv) {
     r = uv_listen((uv_stream_t*) &listener->server, 128 /*backlog*/, socks_accept_cb);
     if (r)
         ERROR_UV("listen error port", r);
-    fprintf(stderr, "Listening on localhost:7000\n");
+    LOGI("Listening on localhost:7000");
     uv_run(loop, UV_RUN_DEFAULT);
     CLOSE_LOGFILE;
     return 0;

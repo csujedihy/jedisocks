@@ -38,6 +38,54 @@ extern FILE * logfile;
     assert(0);                                                      \
 } while(0)
 
+#ifdef XCODE_DEBUG
+#define LOGI(format, ...)                                   \
+do {                                                        \
+    time_t now = time(NULL);                                \
+    char timestr[20];                                       \
+    strftime(timestr, 20, TIME_FORMAT, localtime(&now));    \
+    fprintf(stderr, "%s INFO: " format "\n", timestr,       \
+    ## __VA_ARGS__);                                        \
+    fflush(stderr);                                         \
+}                                                           \
+while (0)
+#else
+#define LOGI(format, ...)                                   \
+do {                                                        \
+    time_t now = time(NULL);                                \
+    char timestr[20];                                       \
+    strftime(timestr, 20, TIME_FORMAT, localtime(&now));    \
+    fprintf(stderr, "\x1b[32m %s INFO: \e[0m" format "\n",  \
+            timestr,## __VA_ARGS__);                        \
+    fflush(stderr);                                         \
+}                                                           \
+while (0)
+#endif
+
+#ifdef XCODE_DEBUG
+#define LOGW(format, ...)                                   \
+do {                                                        \
+    time_t now = time(NULL);                                \
+    char timestr[20];                                       \
+    strftime(timestr, 20, TIME_FORMAT, localtime(&now));    \
+    fprintf(stderr, "%s WARN: " format "\n", timestr,       \
+            ## __VA_ARGS__);                                \
+    fflush(stderr);                                         \
+}                                                           \
+while (0)
+#else
+#define LOGW(format, ...)                                   \
+do {                                                        \
+    time_t now = time(NULL);                                \
+    char timestr[20];                                       \
+    strftime(timestr, 20, TIME_FORMAT, localtime(&now));    \
+    fprintf(stderr, "\x1b[33m %s WARN: \e[0m" format "\n",  \
+            timestr,## __VA_ARGS__);                        \
+    fflush(stderr);                                         \
+}                                                           \
+while (0)
+#endif
+
 #define _LOGD(format, ...)                                          \
 do {                                                                \
         if (logfile != NULL) {                                      \

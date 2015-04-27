@@ -512,7 +512,6 @@ int main(int argc, char **argv)
                 break;
             default:
                 opterr = 1;
-                printf("default error\n");
                 break;
         }
     }
@@ -520,7 +519,6 @@ int main(int argc, char **argv)
     if (configfile != NULL) {
         read_conf(configfile, &conf);
     }
-    printf("ra = %s\n", conf.server_address);
 
     if (opterr || argc == 1 || conf.serverport == NULL) {
         printf("Error: 1)passed wrong or null args to the program.\n");
@@ -546,7 +544,7 @@ int main(int argc, char **argv)
 	r = uv_listen((uv_stream_t*)&listener->handle, 128, server_accept_cb);
 	if (r)
         ERROR_UV("js-server: listen error", r);
-	fprintf(stderr, "js-server: listen on %s:%d\n", conf.server_address, conf.serverport);
+	LOGI("js-server: listen on %s:%d\n", conf.server_address, conf.serverport);
 	uv_run(loop, UV_RUN_DEFAULT);
     CLOSE_LOGFILE;
 }

@@ -23,6 +23,7 @@ Jedisocks v1.0\n\
     ");
 }
 
+// for performance tunning
 struct timeval GetTimeStamp() {
     struct timeval tv;
     gettimeofday(&tv,NULL);
