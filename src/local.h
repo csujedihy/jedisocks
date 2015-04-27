@@ -24,6 +24,7 @@
 #define RC_OFF 0
 #define RC_ESTABLISHING 1
 #define RC_OK 2
+#define MAX_RC_NUM 32
 
 int compare_id (void* left, void* right) {
     if (*(uint32_t*)left == *(uint32_t*)right)
@@ -38,11 +39,23 @@ typedef struct {
     uv_buf_t buf;
 } write_req_t;
 
+typedef struct unused_rc_index {
+    int rc_index;
+    struct unused_rc_index* prev;
+    struct unused_rc_index* next;
+} unused_rc_index_t;
+
+typedef struct unused_rc_queue {
+    unused_rc_index_t head;
+} unused_rc_queue_t;
+
 typedef struct
 {
 	uv_tcp_t server;
     int stage;
-    struct remote_ctx* remote_long;
+    unused_rc_queue_t unused_rc_queue;
+    int rc_pool_size;
+    struct remote_ctx* remote_long[MAX_RC_NUM];
 } server_ctx_t;
 
 typedef struct packet {
@@ -103,6 +116,7 @@ typedef struct remote_ctx
     uint32_t sid;
     socks_connection_list_t managed_socks_list; // SOCKS5 connections managed by this remote_ctx
     int connected;
+    int rc_index;
 } remote_ctx_t;
 
 

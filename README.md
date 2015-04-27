@@ -34,15 +34,20 @@ js-[local|server]
 -V Enable verbose log
 ```
 ####Example of configuration file
-We use the same config file as shadowsocks do.
+We use almost the same config file as shadowsocks do but add new arguments.
 
 ```
 {
-    "local_address":"127.0.0.1",
+    "local_address":"0.0.0.0",
     "server":"127.0.0.1",
     "server_port":7001,
-    "local_port":7000
+    "local_port":7000,
+    "gateway_port":80,
+    "gateway_address":"192.168.0.200",
+    "backend_mode":0,
+    "pool_size":6
 }
+
 ```
 ####Todo:
 1. ~~Read JSON file to load configuration.~~ (Accomplished)

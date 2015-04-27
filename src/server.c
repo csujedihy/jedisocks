@@ -279,9 +279,10 @@ static void remote_addr_resolved_cb(uv_getaddrinfo_t *resolver, int status, stru
 }
 
 static void server_accept_cb(uv_stream_t *server, int status) {
-	if (status) ERROR("async connect", status);
-	server_ctx_t* ctx = server->data;
+	if (status) ERROR_UV("async connect", status);
+	server_ctx_t* ctx = calloc(1, sizeof(server_ctx_t));
     ctx->server.data = ctx;
+    ctx->expect_to_recv = HDRLEN;
 	uv_tcp_init(loop, &ctx->server);
     uv_tcp_nodelay(&ctx->server, 1);
 
@@ -511,7 +512,6 @@ int main(int argc, char **argv)
                 break;
             default:
                 opterr = 1;
-                printf("default error\n");
                 break;
         }
     }
@@ -519,7 +519,6 @@ int main(int argc, char **argv)
     if (configfile != NULL) {
         read_conf(configfile, &conf);
     }
-    printf("ra = %s\n", conf.server_address);
 
     if (opterr || argc == 1 || conf.serverport == NULL) {
         printf("Error: 1)passed wrong or null args to the program.\n");
@@ -534,21 +533,18 @@ int main(int argc, char **argv)
     if (log_to_file)
         USE_LOGFILE(serverlog);
     
-    server_ctx_t* ctx   = calloc(1, sizeof(server_ctx_t));
-    ctx->expect_to_recv = HDRLEN;
-    ctx->listen.data    = ctx;
-	uv_tcp_init(loop, &ctx->listen);
-    uv_tcp_nodelay(&ctx->listen, 1);
+    listener_t* listener = malloc(sizeof(listener_t));
+	uv_tcp_init(loop, &listener->handle);
+    uv_tcp_nodelay(&listener->handle, 1);
 	struct sockaddr_in bind_addr;
 	int r = uv_ip4_addr(conf.server_address, conf.serverport, &bind_addr);
-    // TODO: parse json
-    r = uv_tcp_bind(&ctx->listen, (struct sockaddr*)&bind_addr, 0);
+    r = uv_tcp_bind(&listener->handle, (struct sockaddr*)&bind_addr, 0);
 	if (r < 0)
-        ERROR("js-server: bind error", r);
-	r = uv_listen((uv_stream_t*)&ctx->listen, 128, server_accept_cb);
+        ERROR_UV("js-server: bind error", r);
+	r = uv_listen((uv_stream_t*)&listener->handle, 128, server_accept_cb);
 	if (r)
-        ERROR("js-server: listen error", r);
-	fprintf(stderr, "js-server: listen on %s:%d\n", conf.server_address, conf.serverport);
+        ERROR_UV("js-server: listen error", r);
+	LOGI("js-server: listen on %s:%d\n", conf.server_address, conf.serverport);
 	uv_run(loop, UV_RUN_DEFAULT);
     CLOSE_LOGFILE;
 }

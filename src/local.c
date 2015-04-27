@@ -26,7 +26,7 @@ static void remote_after_close_cb(uv_handle_t* handle);
 static void connect_to_remote_cb(uv_connect_t* req, int status);
 
 // customized functions
-static remote_ctx_t* create_new_long_connection(server_ctx_t* listener);
+static remote_ctx_t* create_new_long_connection(server_ctx_t* listener, int );
 static void remote_exception(remote_ctx_t* remote_ctx);
 static void send_EOF_packet(socks_handshake_t* socks_hsctx, remote_ctx_t* remote_ctx);
 
@@ -42,7 +42,7 @@ uv_loop_t *loop;
 static void remote_after_close_cb(uv_handle_t* handle) {
     remote_ctx_t* remote_ctx = (remote_ctx_t*) handle->data;
     delete_c_map(remote_ctx->idfd_map);
-    remote_ctx->listen->remote_long = NULL;
+    remote_ctx->listen->remote_long[remote_ctx->rc_index] = create_new_long_connection(remote_ctx->listen, remote_ctx->rc_index);
     free(remote_ctx);
 }
 
@@ -113,7 +113,7 @@ static void socks_write_cb(uv_write_t* req, int status) {
 }
 
 static void remote_exception(remote_ctx_t* remote_ctx) {
-    fprintf(stderr, "remote_exception captured\n");
+    LOGW("Freeing remote long connection...");
     uv_read_stop((uv_stream_t *)&remote_ctx->remote);
     if (!uv_is_closing((uv_handle_t*)&remote_ctx->remote)) {
         struct clib_iterator *socks_map_itr = NULL;
@@ -254,7 +254,7 @@ static void connect_to_remote_cb(uv_connect_t* req, int status) {
     remote_ctx_t* ctx = (remote_ctx_t *)req->data;
     req->handle->data = ctx;
     if (status) {
-        fprintf(stderr, "connect error\n");
+        LOGW("Failed to connect to remote gateway");
         remote_exception(ctx);
         free(req);
         return;
@@ -269,15 +269,14 @@ static void connect_to_remote_cb(uv_connect_t* req, int status) {
         {
             uv_read_start((uv_stream_t*) &curr->server, socks_handshake_alloc_cb,
                           socks_handshake_read_cb);
-            fprintf(stderr, "read start\n");
         }
     }
     ctx->connected = RC_OK;
-    fprintf(stderr, "Connected to remote\n");
+    LOGI("Connected to gateway (pool connection id: %d)", ctx->rc_index);
 }   
 
 static int try_to_connect_remote(remote_ctx_t* ctx) {
-    fprintf(stderr, "try to connect to remote\n");
+    LOGI("Try to connect to remote (pool connection id: %d)", ctx->rc_index);
     struct sockaddr_in remote_addr;
     memset(&remote_addr, 0, sizeof(remote_addr));
     int r = uv_ip4_addr(conf.server_address, conf.serverport, &remote_addr);
@@ -291,8 +290,9 @@ static int try_to_connect_remote(remote_ctx_t* ctx) {
 
 // socks accept callback
 static void socks_accept_cb(uv_stream_t *server, int status) {
+    static int round_robin_index = 0;
     if (status)
-        ERROR("async connect", status);
+        ERROR_UV("async connect", status);
     server_ctx_t *listener = (server_ctx_t*)server->data;
     socks_handshake_t *socks_hsctx = calloc(1, sizeof(socks_handshake_t));
     socks_hsctx->server.data = socks_hsctx;
@@ -315,8 +315,9 @@ static void socks_accept_cb(uv_stream_t *server, int status) {
         fprintf(stderr, "accepting connection failed %d", r);
         uv_close((uv_handle_t*) &socks_hsctx->server, NULL);
     }
-    if (likely(listener->remote_long != NULL)) {
-        remote_ctx_t* remote_ctx = listener->remote_long;
+    if (likely(listener->remote_long[round_robin_index] != NULL)) {
+
+        remote_ctx_t* remote_ctx = listener->remote_long[round_robin_index];
         list_add_to_tail(&remote_ctx->managed_socks_list, socks_hsctx);
         socks_hsctx->remote_long = remote_ctx;
         
@@ -331,17 +332,24 @@ static void socks_accept_cb(uv_stream_t *server, int status) {
             case RC_ESTABLISHING:
                 break;
         }
+        
+        socks_hsctx->session_id = ++socks_hsctx->remote_long->sid;
+        insert_c_map (socks_hsctx->remote_long->idfd_map, &socks_hsctx->session_id, sizeof(int), socks_hsctx, sizeof(int));
+        if (socks_hsctx->remote_long->sid == INT_MAX)
+            socks_hsctx->remote_long->sid = 0;
     }
-    else {
-        listener->remote_long = create_new_long_connection(listener);
-        list_add_to_tail(&listener->remote_long->managed_socks_list, socks_hsctx);
-        try_to_connect_remote(listener->remote_long);
-        socks_hsctx->remote_long = listener->remote_long;
-    }
-    socks_hsctx->session_id = ++socks_hsctx->remote_long->sid;
-    insert_c_map (socks_hsctx->remote_long->idfd_map, &socks_hsctx->session_id, sizeof(int), socks_hsctx, sizeof(int));
-    if (socks_hsctx->remote_long->sid == INT_MAX)
-        socks_hsctx->remote_long->sid = 0;
+//    else {
+//        listener->remote_long = create_new_long_connection(listener);
+//        list_add_to_tail(&listener->remote_long->managed_socks_list, socks_hsctx);
+//        try_to_connect_remote(listener->remote_long);
+//        socks_hsctx->remote_long = listener->remote_long;
+//    }
+//
+    
+    if (++round_robin_index == listener->rc_pool_size)
+        round_robin_index = 0;
+    
+
 }
 
 static void socks_handshake_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t *buf) {
@@ -396,12 +404,13 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
                 if (verbose) LOGD("now here is buf\n");
                 if (verbose) SHOW_BUFFER(buf->base, ID_LEN + RSV_LEN + DATALEN_LEN + ATYP_LEN \
                  + ADDRLEN_LEN + socks_hsctx->addrlen + PORT_LEN + nread);
-                
-                write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
-                wr->req.data    = socks_hsctx->remote_long;
-                wr->buf         = uv_buf_init(pkt_buf, ID_LEN + RSV_LEN + DATALEN_LEN + ATYP_LEN \
-                 + ADDRLEN_LEN + socks_hsctx->addrlen + PORT_LEN + nread);
-                uv_write(&wr->req, (uv_stream_t*)&socks_hsctx->remote_long->remote, &wr->buf, 1, remote_write_cb);
+                if (socks_hsctx->remote_long != NULL) {
+                    write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
+                    wr->req.data    = socks_hsctx->remote_long;
+                    wr->buf         = uv_buf_init(pkt_buf, ID_LEN + RSV_LEN + DATALEN_LEN + ATYP_LEN \
+                     + ADDRLEN_LEN + socks_hsctx->addrlen + PORT_LEN + nread);
+                    uv_write(&wr->req, (uv_stream_t*)&socks_hsctx->remote_long->remote, &wr->buf, 1, remote_write_cb);
+                }
                 // do not forget freeing buffers
             }
             else
@@ -425,10 +434,12 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
                 if (verbose) SHOW_BUFFER(pkt_buf, nread);
                 
                 // to add a pointer to refer to long remote connection
-                write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
-                wr->req.data    = socks_hsctx->remote_long;
-                wr->buf = uv_buf_init(pkt_buf, ID_LEN + RSV_LEN + DATALEN_LEN + nread);
-                uv_write(&wr->req, (uv_stream_t*)&socks_hsctx->remote_long->remote, &wr->buf, 1, remote_write_cb);
+                if (socks_hsctx->remote_long != NULL) {
+                    write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
+                    wr->req.data    = socks_hsctx->remote_long;
+                    wr->buf = uv_buf_init(pkt_buf, ID_LEN + RSV_LEN + DATALEN_LEN + nread);
+                    uv_write(&wr->req, (uv_stream_t*)&socks_hsctx->remote_long->remote, &wr->buf, 1, remote_write_cb);
+                }
                 // do not forget free buffers
             }
         }
@@ -511,12 +522,12 @@ static void remote_write_cb(uv_write_t *req, int status) {
     free(wr);
 }
 
-static remote_ctx_t* create_new_long_connection(server_ctx_t* listener){
-    remote_ctx_t* remote_ctx_long;
-    remote_ctx_long = calloc(1, sizeof(remote_ctx_t));
+static remote_ctx_t* create_new_long_connection(server_ctx_t* listener, int index){
+    remote_ctx_t* remote_ctx_long = calloc(1, sizeof(remote_ctx_t));
     if (remote_ctx_long == NULL) {
         FATAL("Not enough memory");
     }
+    remote_ctx_long->rc_index = index;
     remote_ctx_long->expect_to_recv = HDR_LEN;
     remote_ctx_long->remote.data    = remote_ctx_long;
     remote_ctx_long->listen         = listener;
@@ -531,6 +542,7 @@ static remote_ctx_t* create_new_long_connection(server_ctx_t* listener){
 
 int main(int argc, char **argv) {
     memset(&conf, '\0', sizeof(conf));
+    conf.pool_size = 5;    // default pool size = 5
     int c, option_index = 0;
     char* configfile = NULL;
     opterr = 0;
@@ -539,9 +551,11 @@ int main(int argc, char **argv) {
         {0, 0, 0, 0}
     };
     
-    while ((c = getopt_long(argc, argv, "c:r:l:p:P:V",
+    while ((c = getopt_long(argc, argv, "c:r:l:p:P:V:n",
                             long_options, &option_index)) != -1) {
         switch (c) {
+            case 'n':
+                conf.pool_size = atoi(optarg);
             case 'c':
                 configfile = optarg;
                 break;
@@ -569,7 +583,10 @@ int main(int argc, char **argv) {
     if (configfile != NULL) {
         read_conf(configfile, &conf);
     }
-
+    
+    LOGI("Backend mode = %d (1 = ON, 0 = OFF)", conf.backend_mode);
+    LOGI("Connection Pool size = %d", conf.pool_size);
+    
     if (opterr || argc == 1 || conf.serverport == NULL || conf.server_address == NULL || conf.localport == NULL || conf.local_address == NULL) {
         printf("Error: 1) pass wrong or null args to the program.\n");
         printf("       2) parse config file failed.\n");
@@ -585,31 +602,31 @@ int main(int argc, char **argv) {
     
     if (log_to_file)
         USE_LOGFILE(locallog);
-    
     server_ctx_t *listener      = calloc(1, sizeof(server_ctx_t));
-    server_ctx_t *listener_http = calloc(1, sizeof(server_ctx_t));
     listener->server.data       = listener;
-    listener_http->server.data  = listener_http;
-    listener->remote_long       = create_new_long_connection(listener);
-    listener_http->remote_long  = create_new_long_connection(listener_http);
+    listener->rc_pool_size = conf.pool_size;
+    list_init(&listener->unused_rc_queue);
+    if (listener->rc_pool_size > MAX_RC_NUM)
+        ERROR("too large pool size!");
+    for (int i = 0; i < listener->rc_pool_size; ++i) {
+        listener->remote_long[i] = create_new_long_connection(listener, i);
+    }
     
-    uv_tcp_init(loop, &listener_http->server);
-    uv_tcp_nodelay(&listener_http->server, 1);
     uv_tcp_init(loop, &listener->server);
     uv_tcp_nodelay(&listener->server, 1);
     
     int r = 0;
     r = uv_ip4_addr(conf.local_address, conf.localport, &bind_addr);
     if (r)
-        ERROR("address error", r);
+        ERROR_UV("address error", r);
     LOGD("Ready to connect to remote server");
     r = uv_tcp_bind(&listener->server, (struct sockaddr*)&bind_addr, 0);
     if (r)
-    	ERROR("bind error", r);
+    	ERROR_UV("bind error", r);
     r = uv_listen((uv_stream_t*) &listener->server, 128 /*backlog*/, socks_accept_cb);
     if (r)
-        ERROR("listen error port", r);
-    fprintf(stderr, "Listening on localhost:7000\n");
+        ERROR_UV("listen error port", r);
+    LOGI("Listening on localhost:7000");
     uv_run(loop, UV_RUN_DEFAULT);
     CLOSE_LOGFILE;
     return 0;

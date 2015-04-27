@@ -84,8 +84,11 @@ typedef struct {
     char* pkt_buf;
 } write_req_t;
 
-typedef struct {
+typedef struct listener {
+    uv_tcp_t handle;
+} listener_t;
 
+typedef struct {
 	uv_tcp_t listen;
 	uv_tcp_t server;
     struct clib_map* idfd_map;  // for mapping session id with remote fd
