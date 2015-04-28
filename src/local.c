@@ -335,16 +335,20 @@ static void socks_accept_cb(uv_stream_t *server, int status) {
         
         socks_hsctx->session_id = ++socks_hsctx->remote_long->sid;
         insert_c_map (socks_hsctx->remote_long->idfd_map, &socks_hsctx->session_id, sizeof(int), socks_hsctx, sizeof(int));
+        LOGW("Insert session id = %d into map", socks_hsctx->session_id);
         if (socks_hsctx->remote_long->sid == INT_MAX)
             socks_hsctx->remote_long->sid = 0;
     }
-//    else {
-//        listener->remote_long = create_new_long_connection(listener);
-//        list_add_to_tail(&listener->remote_long->managed_socks_list, socks_hsctx);
-//        try_to_connect_remote(listener->remote_long);
-//        socks_hsctx->remote_long = listener->remote_long;
-//    }
-//
+    
+    // if pool size is adaptively adjusted, ...
+    /*
+    else {
+        listener->remote_long = create_new_long_connection(listener);
+        list_add_to_tail(&listener->remote_long->managed_socks_list, socks_hsctx);
+        try_to_connect_remote(listener->remote_long);
+        socks_hsctx->remote_long = listener->remote_long;
+    }
+    */
     
     if (++round_robin_index == listener->rc_pool_size)
         round_robin_index = 0;
@@ -383,6 +387,7 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
         if (likely(socks_hsctx->stage == 2)) {
             if (!socks_hsctx->init) {
                 socks_hsctx->init = 1;
+                LOGW("Init with session id = %d", socks_hsctx->session_id);
                 int offset = 0;
                 char* pkt_buf = malloc(ID_LEN + RSV_LEN + DATALEN_LEN + ATYP_LEN + ADDRLEN_LEN \
                                         + socks_hsctx->addrlen + PORT_LEN + nread);
@@ -512,7 +517,7 @@ static void remote_write_cb(uv_write_t *req, int status) {
     remote_ctx_t* remote_ctx = req->data;
     if (status) {
         if (!uv_is_closing((uv_handle_t*)&remote_ctx->remote)) {
-            LOGD("async write, maybe long remote connection is broken %d", status);
+            LOGW("async write, maybe long remote connection is broken %d", status);
             remote_exception(remote_ctx);
         }
     }

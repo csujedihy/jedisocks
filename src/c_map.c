@@ -613,6 +613,7 @@ new_c_map ( clib_compare fn_c_k, clib_destroy fn_k_d,
 
     return pMap;
 }
+
 clib_error   
 insert_c_map ( struct clib_map* pMap, void* key, size_t key_size, void* value,  size_t value_size) {
     if (pMap == (struct clib_map*)0)
@@ -620,6 +621,7 @@ insert_c_map ( struct clib_map* pMap, void* key, size_t key_size, void* value,  
 
     return insert_c_rb ( pMap->root, key, key_size, value, value_size);
 }
+
 clib_bool    
 exists_c_map ( struct clib_map* pMap, void* key) {
     clib_bool found = clib_false;
