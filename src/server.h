@@ -72,6 +72,8 @@ do {                                                                \
 
 #define SHOWPKTDEBUGWODATA(remote_ctx) LOGD("session_id=%d, rsv=%d, datalen=%d, atyp=%d, addrlen=%d, host=%s, port=%d",remote_ctx->packet->session_id, remote_ctx->packet->rsv, remote_ctx->packet->datalen, remote_ctx->packet->atyp, remote_ctx->packet->addrlen, remote_ctx->packet->host, ntohs(*(uint16_t*)remote_ctx->packet->port))
 
+#define TCP_HANDLE_BASIC    \
+uv_tcp_t handle;
 
 int compare_id (void* left, void* right) {
     if (*(uint32_t*)left == *(uint32_t*)right)
@@ -81,11 +83,11 @@ int compare_id (void* left, void* right) {
 
 typedef struct packet {
     uint32_t session_id;
-    char rsv;
+    uint8_t rsv;
     uint16_t datalen;
     uint16_t payloadlen;
-    char atyp;
-    char addrlen;
+    uint8_t atyp;
+    uint8_t addrlen;
     char host[257];
     char port[2];
     char* data;
@@ -101,17 +103,14 @@ typedef struct send_queue{
 typedef struct {
     uv_write_t req;
     uv_buf_t buf;
-    packet_t* packet;
-    char* pkt_buf;
 } write_req_t;
 
 typedef struct listener {
-    uv_tcp_t handle;
+    TCP_HANDLE_BASIC
 } listener_t;
 
 typedef struct {
-	uv_tcp_t listen;
-	uv_tcp_t server;
+	TCP_HANDLE_BASIC
     struct clib_map* idfd_map;  // for mapping session id with remote fd
     packet_t packet;
     queue_t send_queue;
@@ -125,8 +124,8 @@ typedef struct {
 
 
 typedef struct {
+    TCP_HANDLE_BASIC
     int session_id;
-    uv_tcp_t remote;
     server_ctx_t* server_ctx;
     char host[257];
     char port[2];
