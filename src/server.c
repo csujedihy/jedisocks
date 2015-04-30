@@ -32,10 +32,6 @@ static int try_to_connect_remote(remote_ctx_t* remote_ctx);
 static void send_EOF_packet(remote_ctx_t* remote_ctx);
 static void server_exception(server_ctx_t* server_ctx);
 
-
-#define jmalloc malloc
-#define jfree free
-
 static void server_after_close_cb(uv_handle_t* handle) {
     server_ctx_t* server_ctx = (server_ctx_t*) handle->data;
     delete_c_map(server_ctx->idfd_map);
@@ -63,12 +59,8 @@ static void server_exception(server_ctx_t* server_ctx) {
                 uv_read_stop((uv_stream_t*) &remote_ctx->remote);
                 remote_ctx->server_ctx = NULL;
                 if (!uv_is_closing((uv_handle_t*) &remote_ctx->remote) && (remote_ctx->resolved == 1)) {
-//                    uv_shutdown_t *req = jmalloc(sizeof(uv_shutdown_t));
-//                    req->data = remote_ctx;
                     LOGW("server_exception remote_ctx = %x session_id = %d type = %d", remote_ctx, remote_ctx->session_id,remote_ctx->remote.type);
-//                    uv_shutdown(req, (uv_stream_t*)&remote_ctx->remote, remote_after_shutdown_cb);
                     uv_close((uv_handle_t*) &remote_ctx->remote, remote_after_close_cb);
-                    
                 }
             }
         }
@@ -79,7 +71,7 @@ static void server_exception(server_ctx_t* server_ctx) {
 
 static void send_EOF_packet(remote_ctx_t* ctx){
     int offset = 0;
-    char* pkt_buf       = jmalloc(HDRLEN);
+    char* pkt_buf       = malloc(HDRLEN);
     uint32_t session_id = htonl((uint32_t)ctx->session_id);
     uint16_t datalen    = 0;
     char rsv            = CTL_CLOSE;
@@ -89,10 +81,8 @@ static void send_EOF_packet(remote_ctx_t* ctx){
     set_header(pkt_buf, &session_id, ID_LEN, offset);
     set_header(pkt_buf, &rsv, RSV_LEN, offset);
     set_header(pkt_buf, &datalen, DATALEN_LEN, offset);
-    
-    //LOGD("session_id = %d session_idno = %d", ctx->session_id, session_id);
 
-    write_req_t *wr = (write_req_t*) jmalloc(sizeof(write_req_t));
+    write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
     wr->req.data = ctx->server_ctx;
     wr->buf = uv_buf_init(pkt_buf, EXP_TO_RECV_LEN);
     uv_write(&wr->req, (uv_stream_t*)&ctx->server_ctx->server, &wr->buf, 1, server_write_cb);
@@ -109,9 +99,9 @@ static void remote_after_close_cb(uv_handle_t* handle) {
         packet_t* packet_to_free = NULL;
         while ((packet_to_free = list_get_head_elem(&remote_ctx->send_queue))) {
             list_remove_elem(packet_to_free);
-            jfree(packet_to_free);
+            free(packet_to_free);
         }
-        jfree(remote_ctx);
+        free(remote_ctx);
     }
 }
 
@@ -122,12 +112,12 @@ static void remote_after_shutdown_cb(uv_shutdown_t* req, int status) {
     remote_ctx_t *remote_ctx = (remote_ctx_t *) req->data;
     LOGW("remote_after_shutdown_cb remote_ctx = %x session_id = %d\n", remote_ctx, remote_ctx->session_id);
     uv_close((uv_handle_t*) &remote_ctx->remote, remote_after_close_cb);
-    jfree(req);  
+    free(req);  
 }
 
-// Notice: watch out each callback function, inappropriate jfree() leads to disaster
+// Notice: watch out each callback function, inappropriate free() leads to disaster
 static void remote_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t *buf) {
-    *buf = uv_buf_init((char*) jmalloc(BUF_SIZE), BUF_SIZE);
+    *buf = uv_buf_init((char*) malloc(BUF_SIZE), BUF_SIZE);
     assert(buf->base != NULL);
 }
 
@@ -139,23 +129,14 @@ static void remote_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
             free(buf->base);
         if (nread == 0)
             return;
-        //uv_close((uv_handle_t*) stream, NULL);
         remote_ctx->connected = 0;
         if (!uv_is_closing((uv_handle_t*)&remote_ctx->remote)) {
             // the remote is closing, we tell js-local to stop sending and preparing close
             uv_read_stop((uv_stream_t *)&remote_ctx->remote);
-
-            // shutdown remote
-//            uv_shutdown_t *req = jmalloc(sizeof(uv_shutdown_t));
-//            req->data = remote_ctx;
-//            uv_shutdown(req, (uv_stream_t*)&remote_ctx->remote, remote_after_shutdown_cb);
             uv_close((uv_handle_t*)&remote_ctx->remote, remote_after_close_cb);
             
         }
-        //now handle remote close
-        // for debug
     } else {
-        // normally, server_ctx == NULL will never be true, but just in case we free bufs and return
         server_ctx_t* server_ctx = remote_ctx->server_ctx;
         if (server_ctx == NULL) {
             free(buf->base);
@@ -168,20 +149,16 @@ static void remote_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
         uint16_t datalen    = htons((uint16_t)nread);
         set_header(pkt_buf, &session_id, ID_LEN, offset);
         char rsv = CTL_NORMAL;
-        
         set_header(pkt_buf, &rsv, RSV_LEN, offset);
         set_header(pkt_buf, &datalen, DATALEN_LEN, offset);
         set_payload(pkt_buf, buf->base, nread, offset);
-        
-        //LOGD("datalen(nread) = %d datalenno = %d", nread, datalen);
-
         write_req_t* req = calloc(1,sizeof(write_req_t));
         req->req.data    = server_ctx;
         req->buf         = uv_buf_init(pkt_buf, ID_LEN + RSV_LEN + DATALEN_LEN + nread);
         req->pkt_buf     = pkt_buf;
         uv_write(&req->req, (uv_stream_t*)&remote_ctx->server_ctx->server, &req->buf, 1, server_write_cb);
         LOGW("remote_read_cb remote_ctx = %x session_id = %d type = %d\n", remote_ctx, remote_ctx->session_id,remote_ctx->remote.type);
-        jfree(buf->base);
+        free(buf->base);
     }
 }
 
@@ -198,10 +175,9 @@ static void server_write_cb(uv_write_t *req, int status) {
     assert(wr->req.type == UV_WRITE);
     
     if (wr->buf.base != NULL) {
-        jfree(wr->buf.base);
+        free(wr->buf.base);
     }
-    
-    jfree(wr);
+    free(wr);
 }
 
 static void remote_write_cb(uv_write_t *req, int status) {
@@ -216,17 +192,12 @@ static void remote_write_cb(uv_write_t *req, int status) {
                 // the remote is closing, we tell js-local to stop sending and preparing close
                 uv_read_stop((uv_stream_t *)&remote_ctx->remote);
                 remote_ctx->closing = 1;
-                
-                // shutdown remote
-//                uv_shutdown_t *req = jmalloc(sizeof(uv_shutdown_t));
-//                req->data = remote_ctx;
-//                uv_shutdown(req, (uv_stream_t*)&remote_ctx->remote, remote_after_shutdown_cb);
                 uv_close((uv_handle_t*)&remote_ctx->remote, remote_after_close_cb);
             }
         }
-
-        jfree(wr->buf.base);
-        jfree(wr);
+        
+        free(wr->buf.base);
+        free(wr);
         LOGD("remote write failed!");
         return;
     }
@@ -235,21 +206,21 @@ static void remote_write_cb(uv_write_t *req, int status) {
     //LOGD("send in remote_write_cb data = \n%s\n", wr->buf.base);
     packet_t* packet = list_get_head_elem(&remote_ctx->send_queue);
     if (packet) {
-        write_req_t *wr = (write_req_t*) jmalloc(sizeof(write_req_t));
+        write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
         wr->req.data    = remote_ctx;
         wr->buf         = uv_buf_init(packet->data, packet->payloadlen);
-        wr->packet      = packet;
-        uv_write(&wr->req, (uv_stream_t*) &remote_ctx->remote, &wr->buf, 1, remote_write_cb);
+        int r = uv_write(&wr->req, (uv_stream_t*) &remote_ctx->remote, &wr->buf, 1, remote_write_cb);
+        UV_WRITE_CHECK(r, wr);
         list_remove_elem(packet);
-        jfree(packet);
+        free(packet);
     }
     else {
         if (verbose)
             LOGD("got nothing to send");
     }
     
-    jfree(wr->buf.base);
-    jfree(wr);
+    free(wr->buf.base);
+    free(wr);
     LOGW("remote_write_cb remote_ctx = %x session_id = %d type = %d\n", remote_ctx, remote_ctx->session_id,remote_ctx->remote.type);
 }
 
@@ -261,7 +232,7 @@ static void remote_on_connect_cb(uv_connect_t* req, int status) {
         if (!uv_is_closing((uv_handle_t*)&remote_ctx->remote)) {
             uv_close((uv_handle_t*)&remote_ctx->remote, remote_after_close_cb);
         }
-        jfree(req);
+        free(req);
         return;
     }
     if (verbose) LOGD("domain resovled");
@@ -271,18 +242,18 @@ static void remote_on_connect_cb(uv_connect_t* req, int status) {
     packet_t* packet = list_get_head_elem(&remote_ctx->send_queue);
     if (packet) {
         LOGD("sent something in remote_on_connect");
-        write_req_t *wr = (write_req_t*) jmalloc(sizeof(write_req_t));
+        write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
         wr->req.data    = remote_ctx;
         wr->buf         = uv_buf_init(packet->data, packet->payloadlen);
         wr->packet      = packet;
         uv_write(&wr->req, (uv_stream_t*) &remote_ctx->remote, &wr->buf, 1, remote_write_cb);
         list_remove_elem(packet);
-        jfree(packet);
+        free(packet);
     }
     else{
         if (verbose) LOGD("got nothing to send");
     }
-    jfree(req); //2.28 added
+    free(req);
 }
 
 static int try_to_connect_remote(remote_ctx_t* remote_ctx) {
@@ -292,7 +263,7 @@ static int try_to_connect_remote(remote_ctx_t* remote_ctx) {
     remote_addr.sin_family = AF_INET;
     memcpy(&remote_addr.sin_addr.s_addr, remote_ctx->host, 4);
     remote_addr.sin_port = *(uint16_t*)remote_ctx->port; // notice: packet.port is in network order
-    uv_connect_t* remote_conn_req = (uv_connect_t*) jmalloc(sizeof(uv_connect_t));
+    uv_connect_t* remote_conn_req = (uv_connect_t*) malloc(sizeof(uv_connect_t));
     uv_tcp_nodelay(&remote_ctx->remote, 1);
     remote_conn_req->data = remote_ctx;
     return uv_tcp_connect(remote_conn_req, &remote_ctx->remote, (struct sockaddr*)&remote_addr, remote_on_connect_cb);
@@ -303,8 +274,10 @@ static void remote_addr_resolved_cb(uv_getaddrinfo_t *resolver, int status, stru
     if (status) {
         LOGD("error DNS resolve ");
         remote_ctx->resolved = 0;
-        // TODO:
-        // more exceptions to handle?
+        freeaddrinfo(res);
+        if (!uv_is_closing((uv_handle_t*)&remote_ctx->remote)) {
+            uv_close((uv_handle_t*)&remote_ctx->remote, remote_after_close_cb);
+        }
         return;
     }
     if (verbose) LOGD("remote_addr_resolve");
@@ -316,7 +289,7 @@ static void remote_addr_resolved_cb(uv_getaddrinfo_t *resolver, int status, stru
         memcpy(remote_ctx->host, &((struct sockaddr_in6*)(res->ai_addr))->sin6_addr.s6_addr, 16);
         remote_ctx->addrlen = 16; //fix
     } else {
-        LOGD("DNS resolve failed!");
+        LOGD("DNS ai_family unrecognized");
     }
     LOGD("ip when resovled: %d.%d.%d.%d \n", (unsigned char)ctx->host[0], (unsigned char)ctx->host[1], (unsigned char)ctx->host[2], (unsigned char)ctx->host[3]);
     LOGW("remote_addr_resolved_cb remote_ctx = %x session_id = %d\n", remote_ctx, remote_ctx->session_id);
@@ -324,7 +297,7 @@ static void remote_addr_resolved_cb(uv_getaddrinfo_t *resolver, int status, stru
     if (r)
         LOGD("error in connect to remote");
     uv_freeaddrinfo(res);
-    jfree(resolver);
+    free(resolver);
 }
 
 static void server_accept_cb(uv_stream_t *server, int status) {
@@ -409,11 +382,7 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
                             fprintf(stderr, "exist session close remote_ctx = %d\n", exist_ctx);
                             uv_read_stop((uv_stream_t *)&exist_ctx->remote);
                             if (!uv_is_closing((uv_handle_t*)&exist_ctx->remote)) {
-//                                uv_shutdown_t *req = jmalloc(sizeof(uv_shutdown_t));
-//                                req->data = exist_ctx;
-//                                uv_shutdown(req, (uv_stream_t*) &exist_ctx->remote, remote_after_shutdown_cb);
                                 uv_close((uv_handle_t*)&exist_ctx->remote, remote_after_close_cb);
-                            
                             }
                         }
                         else
@@ -448,9 +417,9 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
                     if (ctx->packet.rsv == CTL_INIT)
                         assert(0);
                     ctx->packet.payloadlen = ctx->packet.datalen;
-                    packet_t* pkt_to_send = jmalloc(sizeof(packet_t));
+                    packet_t* pkt_to_send = malloc(sizeof(packet_t));
                     memcpy(pkt_to_send, &ctx->packet, sizeof(packet_t));
-                    pkt_to_send->data = jmalloc(ctx->packet.payloadlen);
+                    pkt_to_send->data = malloc(ctx->packet.payloadlen);
                     get_header(pkt_to_send->data, ctx->packet_buf, ctx->packet.payloadlen, ctx->packet.offset);
                     LOGD("server_read_cb: (request)packet.data = \n%s\n",pkt_to_send->data);
                     LOG_SHOW_BUFFER(pkt_to_send->data, pkt_to_send->payloadlen);
@@ -460,15 +429,13 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
                     if (exist_ctx->resolved == 1 && exist_ctx->connected == 1) {
                         packet_t* packet = list_get_head_elem(&exist_ctx->send_queue);
                         if (packet) {
-                            write_req_t *wr = (write_req_t*) jmalloc(sizeof(write_req_t));
+                            write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
                             wr->req.data = exist_ctx;
                             wr->buf      = uv_buf_init(packet->data, packet->payloadlen);
                             wr->packet   = packet;
-                            //LOGD("send in (exist_ctx) server_read_cb len = %d data = \n%s\n",packet->payloadlen, wr->buf.base);
-                            // TODO: debug here
                             uv_write(&wr->req, (uv_stream_t*)(void *)&exist_ctx->remote, &wr->buf, 1, remote_write_cb);
                             list_remove_elem(packet);
-                            jfree(packet);
+                            free(packet);
                         }
                         else
                             LOGD("server_read_cb: got nothing to send");
@@ -499,9 +466,9 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
                     get_header(remote_ctx->port, ctx->packet_buf, PORT_LEN, ctx->packet.offset);
 //                  packet_payload_alloc(ctx->packet, FULLPKT);
                     ctx->packet.payloadlen = ctx->packet.datalen - (ATYP_LEN + ADDRLEN_LEN + ctx->packet.addrlen + PORT_LEN);
-                    packet_t* pkt_to_send = jmalloc(sizeof(packet_t));
+                    packet_t* pkt_to_send = malloc(sizeof(packet_t));
                     memcpy(pkt_to_send, &ctx->packet, sizeof(packet_t));
-                    pkt_to_send->data = jmalloc(ctx->packet.payloadlen);
+                    pkt_to_send->data = malloc(ctx->packet.payloadlen);
                     get_payload(pkt_to_send->data, ctx->packet_buf, ctx->packet.payloadlen, ctx->packet.offset);
                     //LOGD("(request)packet.data =\n%s", pkt_to_send->data);
                     remote_ctx->host[remote_ctx->addrlen] = '\0';// put a EOF on domain name
@@ -511,7 +478,7 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
                     list_add_to_tail(&remote_ctx->send_queue, pkt_to_send);
                     //SHOWPKTDEBUGWODATA(remote_ctx);
                     if (ctx->packet.atyp == 0x03) {
-                        uv_getaddrinfo_t* resolver = jmalloc(sizeof(uv_getaddrinfo_t));
+                        uv_getaddrinfo_t* resolver = malloc(sizeof(uv_getaddrinfo_t));
                         // have to resolve domain name first
                         resolver->data = remote_ctx;
                         int r = uv_getaddrinfo(loop, resolver, remote_addr_resolved_cb, remote_ctx->host, NULL, NULL);
@@ -552,11 +519,7 @@ int main(int argc, char **argv)
     int c, option_index = 0;
     char* configfile = NULL;
     opterr = 0;
-    static struct option long_options[] =
-    {
-        { 0, 0, 0, 0 }
-    };
-    
+    static struct option long_options[] = {{0, 0, 0, 0}};
     while ((c = getopt_long(argc, argv, "c:r:l:p:P:V",
                             long_options, &option_index)) != -1) {
         switch (c) {
@@ -614,5 +577,7 @@ int main(int argc, char **argv)
         ERROR_UV("js-server: listen error", r);
 	LOGI("js-server: listen on %s:%d", conf.server_address, conf.serverport);
 	uv_run(loop, UV_RUN_DEFAULT);
+    uv_close((uv_handle_t*) &listener->handle, NULL);
+    free(listener);
     CLOSE_LOGFILE;
 }
