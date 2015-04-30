@@ -514,6 +514,24 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
 
 }
 
+void signal_handler(uv_signal_t *handle, int signum)
+{
+    printf("Ctrl+C pressed %d\n", signum);
+    uv_signal_stop(handle);
+    uv_stop(loop);
+    uv_loop_delete(loop);
+    exit(0);
+    
+}
+
+void setup_signal_handler(uv_loop_t *loop)
+{
+    signal(SIGPIPE, SIG_IGN);
+    uv_signal_t sigint;
+    int n = uv_signal_init(loop, &sigint);
+    n = uv_signal_start(&sigint, signal_handler, SIGINT);
+}
+
 int main(int argc, char **argv)
 {
     conf_t  conf;
@@ -578,8 +596,11 @@ int main(int argc, char **argv)
 	if (r)
         ERROR_UV("js-server: listen error", r);
 	LOGI("js-server: listen on %s:%d", conf.server_address, conf.serverport);
+    
+    setup_signal_handler(loop);
 	uv_run(loop, UV_RUN_DEFAULT);
     uv_close((uv_handle_t*) &listener->handle, NULL);
+    uv_loop_delete(loop);
     free(listener);
     CLOSE_LOGFILE;
 }

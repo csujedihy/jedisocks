@@ -135,9 +135,6 @@ typedef struct {
     int resolved;
     int connected;
     char addrlen;
-//    char dnsed_ipv4[16];    // reserved for ipv6 addr
-//    char port[2];
-//    int session_id;
     int stage;
     int closing;
 } remote_ctx_t;

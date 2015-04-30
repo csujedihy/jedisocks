@@ -96,21 +96,27 @@ if (val != NULL)
     JSONPARSE("backend_mode"){
         memcpy(backend_mode_buf, val, vlen);
         conf->backend_mode = atoi(backend_mode_buf);
-        if (!conf->backend_mode)
-            return;
+        if (conf->backend_mode) {
+        
+            JSONPARSE("gateway_address"){
+                conf->centralgw_address = (char*)malloc(vlen);
+                memcpy(conf->centralgw_address, val, vlen);
+                conf->centralgw_address_len = vlen;
+            }
+            
+            JSONPARSE("gateway_port"){
+                memcpy(gatewayport_buf, val, vlen);
+                conf->gatewayport = atoi(gatewayport_buf);
+                fprintf(stderr, "Forward to gateway:%d\n", conf->gatewayport);
+            }
+            
+        }
     }
     
-    JSONPARSE("gateway_address"){
-        conf->centralgw_address = (char*)malloc(vlen);
-        memcpy(conf->centralgw_address, val, vlen);
-        conf->centralgw_address_len = vlen;
-    }
-    
-    JSONPARSE("gateway_port"){
-        memcpy(gatewayport_buf, val, vlen);
-        conf->gatewayport = atoi(gatewayport_buf);
-        fprintf(stderr, "Forward to gateway:%d\n", conf->gatewayport);
-    }
     
 #undef JSONPARSE
+
+
+    free(configbuf);
+    // should be improved, configbuf will not be freed in some specific cases
 }
