@@ -10,9 +10,9 @@
 #include "c_map.h"
 #include "jconf.h"
 
-uv_loop_t *loop;
-int verbose     = 0;
+uv_loop_t *loop = NULL;
 FILE * logfile  = NULL;
+int verbose     = 0;
 int log_to_file = 1;
 
 // callback functions
@@ -85,7 +85,7 @@ static void send_EOF_packet(remote_ctx_t* ctx){
     write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
     wr->req.data = ctx->server_ctx;
     wr->buf = uv_buf_init(pkt_buf, EXP_TO_RECV_LEN);
-    uv_write(&wr->req, (uv_stream_t*)&ctx->server_ctx->server, &wr->buf, 1, server_write_cb);
+    int r = uv_write(&wr->req, (uv_stream_t*)&ctx->server_ctx->server, &wr->buf, 1, server_write_cb);
 }
 
 static void remote_after_close_cb(uv_handle_t* handle) {
@@ -188,12 +188,7 @@ static void remote_write_cb(uv_write_t *req, int status) {
         LOGW("remote_write_cb error session id = %d", remote_ctx->session_id);
         remote_ctx->connected = 0;
         if (status != UV_ECANCELED) {
-            if (!uv_is_closing((uv_handle_t*)&remote_ctx->remote)) {
-                // the remote is closing, we tell js-local to stop sending and preparing close
-                uv_read_stop((uv_stream_t *)&remote_ctx->remote);
-                remote_ctx->closing = 1;
-                uv_close((uv_handle_t*)&remote_ctx->remote, remote_after_close_cb);
-            }
+            HANDLECLOSE(&remote_ctx->remote, remote_after_close_cb);
         }
         
         free(wr->buf.base);
@@ -210,7 +205,7 @@ static void remote_write_cb(uv_write_t *req, int status) {
         wr->req.data    = remote_ctx;
         wr->buf         = uv_buf_init(packet->data, packet->payloadlen);
         int r = uv_write(&wr->req, (uv_stream_t*) &remote_ctx->remote, &wr->buf, 1, remote_write_cb);
-        UV_WRITE_CHECK(r, wr);
+        UV_WRITE_CHECK(r, wr, &remote_ctx->remote, remote_after_close_cb);
         list_remove_elem(packet);
         free(packet);
     }
@@ -229,9 +224,7 @@ static void remote_on_connect_cb(uv_connect_t* req, int status) {
     remote_ctx_t* remote_ctx = (remote_ctx_t*)req->data;
     if (status) {
         LOGD("error in remote_on_connect");
-        if (!uv_is_closing((uv_handle_t*)&remote_ctx->remote)) {
-            uv_close((uv_handle_t*)&remote_ctx->remote, remote_after_close_cb);
-        }
+        HANDLECLOSE(&remote_ctx->remote, remote_after_close_cb);
         free(req);
         return;
     }
@@ -245,8 +238,8 @@ static void remote_on_connect_cb(uv_connect_t* req, int status) {
         write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
         wr->req.data    = remote_ctx;
         wr->buf         = uv_buf_init(packet->data, packet->payloadlen);
-        wr->packet      = packet;
-        uv_write(&wr->req, (uv_stream_t*) &remote_ctx->remote, &wr->buf, 1, remote_write_cb);
+        int r = uv_write(&wr->req, (uv_stream_t*) &remote_ctx->remote, &wr->buf, 1, remote_write_cb);
+        UV_WRITE_CHECK(r, wr, &remote_ctx->remote, remote_after_close_cb);
         list_remove_elem(packet);
         free(packet);
     }
@@ -275,19 +268,25 @@ static void remote_addr_resolved_cb(uv_getaddrinfo_t *resolver, int status, stru
         LOGD("error DNS resolve ");
         remote_ctx->resolved = 0;
         freeaddrinfo(res);
-        if (!uv_is_closing((uv_handle_t*)&remote_ctx->remote)) {
-            uv_close((uv_handle_t*)&remote_ctx->remote, remote_after_close_cb);
-        }
+        HANDLECLOSE(&remote_ctx->remote, remote_after_close_cb);
         return;
     }
-    if (verbose) LOGD("remote_addr_resolve");
+    
+    if (remote_ctx->closing == 1) {
+        remote_ctx->resolved = 0;
+        HANDLECLOSE(&remote_ctx->remote, remote_after_close_cb);
+        uv_freeaddrinfo(res);
+        free(resolver);
+        return;
+    }
+    
     remote_ctx->resolved = 1;
     if (res->ai_family == AF_INET) {
         memcpy(remote_ctx->host, &((struct sockaddr_in*)(res->ai_addr))->sin_addr.s_addr, 4);
-        remote_ctx->addrlen = 4; //fix
+        remote_ctx->addrlen = 4;
     } else if (res->ai_family == AF_INET6) {
         memcpy(remote_ctx->host, &((struct sockaddr_in6*)(res->ai_addr))->sin6_addr.s6_addr, 16);
-        remote_ctx->addrlen = 16; //fix
+        remote_ctx->addrlen = 16;
     } else {
         LOGD("DNS ai_family unrecognized");
     }
@@ -295,7 +294,7 @@ static void remote_addr_resolved_cb(uv_getaddrinfo_t *resolver, int status, stru
     LOGW("remote_addr_resolved_cb remote_ctx = %x session_id = %d\n", remote_ctx, remote_ctx->session_id);
     int r = try_to_connect_remote(remote_ctx);
     if (r)
-        LOGD("error in connect to remote");
+        HANDLECLOSE(&remote_ctx->remote, remote_after_close_cb);
     uv_freeaddrinfo(res);
     free(resolver);
 }
@@ -379,10 +378,13 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
                             // stop watching read I/O
                             // elegantly close
                             // closing == 4, peer closing in charge, just close remote
-                            fprintf(stderr, "exist session close remote_ctx = %d\n", exist_ctx);
+                            fprintf(stderr, "exist session close remote_ctx = %x\n", exist_ctx);
                             uv_read_stop((uv_stream_t *)&exist_ctx->remote);
                             if (!uv_is_closing((uv_handle_t*)&exist_ctx->remote)) {
-                                uv_close((uv_handle_t*)&exist_ctx->remote, remote_after_close_cb);
+                                if (exist_ctx->resolved == 1)
+                                    uv_close((uv_handle_t*)&exist_ctx->remote, remote_after_close_cb);
+                                else
+                                    exist_ctx->closing = 1;
                             }
                         }
                         else
@@ -432,8 +434,8 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
                             write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
                             wr->req.data = exist_ctx;
                             wr->buf      = uv_buf_init(packet->data, packet->payloadlen);
-                            wr->packet   = packet;
-                            uv_write(&wr->req, (uv_stream_t*)(void *)&exist_ctx->remote, &wr->buf, 1, remote_write_cb);
+                            int r = uv_write(&wr->req, (uv_stream_t*)(void *)&exist_ctx->remote, &wr->buf, 1, remote_write_cb);
+                            UV_WRITE_CHECK(r, wr, &exist_ctx->remote, remote_after_close_cb);
                             list_remove_elem(packet);
                             free(packet);
                         }

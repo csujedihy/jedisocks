@@ -25,7 +25,7 @@ if (flag) \
 else \
     packet.payloadlen = packet.datalen; \
 packet.data = calloc(1, packet.payloadlen); \
-} while(0)
+} while (0)
 
 #define addrinfo_hints_init(hints)  \
 do {                                \
@@ -33,7 +33,7 @@ hints.ai_family = PF_INET;          \
 hints.ai_socktype = SOCK_STREAM;    \
 hints.ai_protocol = IPPROTO_TCP;    \
 hints.ai_flags = 0;                 \
-} while(0)
+} while (0)
 
 // reset packet buf
 // reset packet structure
@@ -44,15 +44,28 @@ do {                                            \
     memset(ctx->packet_buf, 0, MAX_PKT_SIZE);   \
     memset(&ctx->packet, 0, sizeof(packet_t));  \
     ctx->reset = 1;                             \
-} while(0)
+} while (0)
 
-#define UV_WRITE_CHECK(r, wr)   \
-do {                            \
-    if (r) {                    \
-        free(wr);               \
-        free((wr)->buf.base);   \
-    }                           \
-} while(0)
+#define UV_WRITE_CHECK(r, wr, handle, cb)                           \
+do {                                                                \
+    if (r) {                                                        \
+        if (wr) {                                                   \
+            free(wr);                                               \
+            free((wr)->buf.base);                                   \
+        }                                                           \
+        if (!uv_is_closing((uv_handle_t*) handle)) {                \
+            uv_read_stop((uv_stream_t *) handle);                   \
+            uv_close((uv_handle_t*) handle, cb);                    \
+        }                                                           \
+    }                                                               \
+} while (0)
+
+#define HANDLECLOSE(handle, cb) do {                            \
+    if (!uv_is_closing((uv_handle_t*) handle)) {                \
+        uv_read_stop((uv_stream_t *) handle);                   \
+        uv_close((uv_handle_t*) handle, cb);                    \
+    }                                                           \
+} while (0)
 
 // debug
 #define SHOWPKTDEBUG(remote_ctx) LOGD("session_id=%d, rsv=%d, datalen=%d, atyp=%d, addrlen=%d, host=%s, port=%d, data=\n%s",remote_ctx->packet->session_id, remote_ctx->packet->rsv, remote_ctx->packet->datalen, remote_ctx->packet->atyp, remote_ctx->packet->addrlen, remote_ctx->packet->host, ntohs(*(uint16_t*)remote_ctx->packet->port), remote_ctx->packet->data)
