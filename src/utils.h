@@ -5,6 +5,7 @@
 #include <time.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <uv.h>
 extern FILE * logfile;
 
 #if __GNUC__ >= 3
@@ -65,12 +66,6 @@ while (0)
 #ifdef XCODE_DEBUG
 #define LOGW(format, ...)                                   \
 do {                                                        \
-    time_t now = time(NULL);                                \
-    char timestr[20];                                       \
-    strftime(timestr, 20, TIME_FORMAT, localtime(&now));    \
-    fprintf(stderr, "%s WARN: " format "\n", timestr,       \
-            ## __VA_ARGS__);                                \
-    fflush(stderr);                                         \
 }                                                           \
 while (0)
 #else
@@ -232,4 +227,7 @@ do {                                    \
 
 void usage();
 struct timeval GetTimeStamp();
+void setup_signal_handler(uv_loop_t *loop);
+void signal_handler(uv_signal_t *handle, int signum);
+
 #endif

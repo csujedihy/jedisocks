@@ -15,6 +15,7 @@ FILE * logfile  = NULL;
 int verbose     = 0;
 int log_to_file = 1;
 conf_t  conf;
+
 // callback functions
 static void remote_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t *buf);
 static void remote_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf);
@@ -34,7 +35,9 @@ static void send_EOF_packet(remote_ctx_t* remote_ctx);
 static void server_exception(server_ctx_t* server_ctx);
 
 static void remote_timeout_cb(uv_timer_t* handle) {
-    
+    LOGW("remote timeout, ready to close remote connection");
+    remote_ctx_t* remote_ctx = handle->data;
+    HANDLECLOSE(&remote_ctx->handle, remote_after_close_cb);
 }
 
 static void server_after_close_cb(uv_handle_t* handle) {
@@ -95,10 +98,10 @@ static void send_EOF_packet(remote_ctx_t* ctx){
 
 static void remote_after_close_cb(uv_handle_t* handle) {
     remote_ctx_t* remote_ctx = (remote_ctx_t*)handle->data;
-    LOGW("remote_close_cb remote_ctx = %x session_id = %d\n", remote_ctx, remote_ctx->session_id);
+    LOGW("remote_close_cb remote_ctx = %x session_id = %d", remote_ctx, remote_ctx->session_id);
     if (remote_ctx != NULL) {
         if ((remote_ctx->server_ctx != NULL)) {
-                remove_c_map(remote_ctx->server_ctx->idfd_map, &remote_ctx->session_id, NULL);
+            remove_c_map(remote_ctx->server_ctx->idfd_map, &remote_ctx->session_id, NULL);
             send_EOF_packet(remote_ctx);
         }
         packet_t* packet_to_free = NULL;
@@ -128,6 +131,7 @@ static void remote_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t *buf) {
 
 static void remote_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
     remote_ctx_t* remote_ctx = (remote_ctx_t*)stream->data;
+    //uv_timer_again(&remote_ctx->http_timeout);
     if (unlikely(nread <= 0)) {
         LOGD("remote_read_cb: nread <= 0");
         if (buf->len)
@@ -161,7 +165,7 @@ static void remote_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
         req->req.data    = server_ctx;
         req->buf         = uv_buf_init(pkt_buf, ID_LEN + RSV_LEN + DATALEN_LEN + nread);
         uv_write(&req->req, (uv_stream_t*)&remote_ctx->server_ctx->handle, &req->buf, 1, server_write_cb);
-        LOGW("remote_read_cb remote_ctx = %x session_id = %d type = %d\n", remote_ctx, remote_ctx->session_id,remote_ctx->handle.type);
+        LOGW("remote_read_cb remote_ctx = %x session_id = %d type = %d", remote_ctx, remote_ctx->session_id,remote_ctx->handle.type);
         free(buf->base);
     }
 }
@@ -203,6 +207,7 @@ static void remote_write_cb(uv_write_t *req, int status) {
     
     assert(wr->req.type == UV_WRITE);
     //LOGD("send in remote_write_cb data = \n%s\n", wr->buf.base);
+    uv_timer_again(&remote_ctx->http_timeout);
     packet_t* packet = list_get_head_elem(&remote_ctx->send_queue);
     if (packet) {
         write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
@@ -220,7 +225,7 @@ static void remote_write_cb(uv_write_t *req, int status) {
     
     free(wr->buf.base);
     free(wr);
-    LOGW("remote_write_cb remote_ctx = %x session_id = %d type = %d\n", remote_ctx, remote_ctx->session_id,remote_ctx->handle.type);
+    LOGW("remote_write_cb remote_ctx = %x session_id = %d type = %d", remote_ctx, remote_ctx->session_id,remote_ctx->handle.type);
 }
 
 // TODO: add timer to watch remote connection in case of TCP or HTTP timeout
@@ -295,7 +300,7 @@ static void remote_addr_resolved_cb(uv_getaddrinfo_t *resolver, int status, stru
         LOGD("DNS ai_family unrecognized");
     }
     LOGD("ip when resovled: %d.%d.%d.%d \n", (unsigned char)ctx->host[0], (unsigned char)ctx->host[1], (unsigned char)ctx->host[2], (unsigned char)ctx->host[3]);
-    LOGW("remote_addr_resolved_cb remote_ctx = %x session_id = %d\n", remote_ctx, remote_ctx->session_id);
+    LOGW("remote_addr_resolved_cb remote_ctx = %x session_id = %d", remote_ctx, remote_ctx->session_id);
     int r = try_to_connect_remote(remote_ctx);
     if (r)
         HANDLECLOSE(&remote_ctx->handle, remote_after_close_cb);
@@ -382,7 +387,7 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
                             // stop watching read I/O
                             // elegantly close
                             // closing == 4, peer closing in charge, just close remote
-                            fprintf(stderr, "exist session close remote_ctx = %x\n", exist_ctx);
+                            LOGW("exist session close remote_ctx = %x\n", exist_ctx);
                             uv_read_stop((uv_stream_t *)&exist_ctx->handle);
                             if (!uv_is_closing((uv_handle_t*)&exist_ctx->handle)) {
                                 if (exist_ctx->resolved == 1)
@@ -466,7 +471,7 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
                     remote_ctx->http_timeout.data = remote_ctx;
                     uv_tcp_init(loop, &remote_ctx->handle);
                     uv_timer_init(loop, &remote_ctx->http_timeout);
-                    uv_timer_start(&remote_ctx->http_timeout, remote_timeout_cb, conf.timeout, conf.timeout);
+                    //uv_timer_start(&remote_ctx->http_timeout, remote_timeout_cb, conf.timeout, conf.timeout);
                     list_init(&remote_ctx->send_queue);
                     get_header(&ctx->packet.atyp, ctx->packet_buf, ATYP_LEN, ctx->packet.offset);
                     get_header(&ctx->packet.addrlen, ctx->packet_buf, ADDRLEN_LEN, ctx->packet.offset);
@@ -482,7 +487,7 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
                     //LOGD("(request)packet.data =\n%s", pkt_to_send->data);
                     remote_ctx->host[remote_ctx->addrlen] = '\0';// put a EOF on domain name
                     remote_ctx->session_id = ctx->packet.session_id;
-                    fprintf(stderr, "server_read_cb remote_ctx = %x create session id = %d\n", remote_ctx, remote_ctx->session_id);
+                    LOGW("server_read_cb remote_ctx = %x create session id = %d", remote_ctx, remote_ctx->session_id);
                     insert_c_map (ctx->idfd_map, &remote_ctx->session_id, sizeof(int), remote_ctx, sizeof(int));
                     list_add_to_tail(&remote_ctx->send_queue, pkt_to_send);
                     //SHOWPKTDEBUGWODATA(remote_ctx);
@@ -501,7 +506,7 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
                     else if (ctx->packet.atyp == 0x04){
                         // TODO: ipv6 temporarily unsupported
                     }
-                    LOGW("server_read_cb:1 remote_ctx = %x session_id = %d type = %d\n", remote_ctx,  remote_ctx->session_id, remote_ctx->handle.type);
+                    LOGW("server_read_cb:1 remote_ctx = %x session_id = %d type = %d", remote_ctx,  remote_ctx->session_id, remote_ctx->handle.type);
                 }
             } else if (ctx->buf_len < ctx->packet.datalen + EXP_TO_RECV_LEN) {
                 if (verbose) LOGD("< datalen gather more");
@@ -519,24 +524,6 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
 	}
     LOGD("server_read_cb: ==============================end==============================\n");
 
-}
-
-void signal_handler(uv_signal_t *handle, int signum)
-{
-    printf("Ctrl+C pressed %d\n", signum);
-    uv_signal_stop(handle);
-    uv_stop(loop);
-    uv_loop_delete(loop);
-    exit(0);
-    
-}
-
-void setup_signal_handler(uv_loop_t *loop)
-{
-    signal(SIGPIPE, SIG_IGN);
-    uv_signal_t sigint;
-    int n = uv_signal_init(loop, &sigint);
-    n = uv_signal_start(&sigint, signal_handler, SIGINT);
 }
 
 int main(int argc, char **argv)

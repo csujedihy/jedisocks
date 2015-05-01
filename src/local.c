@@ -152,7 +152,7 @@ static void remote_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *b
         if (nread == 0)
             return;
         if (!uv_is_closing((uv_handle_t*)client)) {
-            fprintf(stderr, "remote long connection is closed or error\n");
+            LOGW("Remote long connection is closed or error");
             remote_exception(ctx);
         }
 

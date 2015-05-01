@@ -7,6 +7,7 @@
 //
 
 #include <stdio.h>
+#include <uv.h>
 #include "utils.h"
 
 void usage() {
@@ -22,6 +23,27 @@ Jedisocks v1.0\n\
     -P <remote_port> Port number of your remote server\n\
     ");
 }
+
+void signal_handler(uv_signal_t *handle, int signum)
+{
+    printf("Ctrl+C pressed %d\n", signum);
+    uv_loop_t* loop = handle->data;
+    uv_signal_stop(handle);
+    uv_stop(loop);
+    uv_loop_delete(loop);
+    exit(0);
+    
+}
+
+void setup_signal_handler(uv_loop_t *loop)
+{
+    signal(SIGPIPE, SIG_IGN);
+    uv_signal_t sigint;
+    sigint.data = loop;
+    int n = uv_signal_init(loop, &sigint);
+    n = uv_signal_start(&sigint, signal_handler, SIGINT);
+}
+
 
 // for performance tunning
 struct timeval GetTimeStamp() {

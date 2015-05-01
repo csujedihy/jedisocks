@@ -29,7 +29,6 @@ int server_validate_conf(conf_t* conf) {
 }
 
 void read_conf(char* configfile, conf_t* conf) {
-
     conf_t* config = conf;
     char* val = NULL;
     char* configbuf = NULL;
@@ -116,12 +115,13 @@ if (val != NULL)
     
     JSONPARSE("timeout"){
         memcpy(timeout_buf, val, vlen);
-        conf->timeout = atoi(timeout_buf);
+        conf->timeout = 1000 * atoi(timeout_buf);   // transfer ms to s
     }
     
 #undef JSONPARSE
 
 
     free(configbuf);
+    
     // should be improved, configbuf will not be freed in some specific cases
 }
