@@ -38,6 +38,7 @@ void read_conf(char* configfile, conf_t* conf) {
     char gatewayport_buf[6]  = {0};
     char backend_mode_buf[6] = {0};
     char pool_size_buf[6]    = {0};
+    char timeout_buf[6]      = {0};
     int vlen = 0;
     
     FILE *f = fopen(configfile, "rb");
@@ -113,6 +114,10 @@ if (val != NULL)
         }
     }
     
+    JSONPARSE("timeout"){
+        memcpy(timeout_buf, val, vlen);
+        conf->timeout = atoi(timeout_buf);
+    }
     
 #undef JSONPARSE
 

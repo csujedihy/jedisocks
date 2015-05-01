@@ -14,7 +14,7 @@ uv_loop_t *loop = NULL;
 FILE * logfile  = NULL;
 int verbose     = 0;
 int log_to_file = 1;
-
+conf_t  conf;
 // callback functions
 static void remote_alloc_cb(uv_handle_t *handle, size_t size, uv_buf_t *buf);
 static void remote_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf);
@@ -26,11 +26,16 @@ static void remote_after_close_cb(uv_handle_t* handle);
 static void remote_addr_resolved_cb(uv_getaddrinfo_t *resolver, int status, struct addrinfo *res);
 static void remote_on_connect_cb(uv_connect_t* req, int status);
 static void server_write_cb(uv_write_t *req, int status);
+static void remote_timeout_cb(uv_timer_t* handle);
 
 // customized functions
 static int try_to_connect_remote(remote_ctx_t* remote_ctx);
 static void send_EOF_packet(remote_ctx_t* remote_ctx);
 static void server_exception(server_ctx_t* server_ctx);
+
+static void remote_timeout_cb(uv_timer_t* handle) {
+    
+}
 
 static void server_after_close_cb(uv_handle_t* handle) {
     server_ctx_t* server_ctx = (server_ctx_t*) handle->data;
@@ -458,7 +463,10 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
                     remote_ctx_t* remote_ctx = calloc(1, sizeof(remote_ctx_t));
                     remote_ctx->server_ctx  = ctx;
                     remote_ctx->handle.data = remote_ctx;
+                    remote_ctx->http_timeout.data = remote_ctx;
                     uv_tcp_init(loop, &remote_ctx->handle);
+                    uv_timer_init(loop, &remote_ctx->http_timeout);
+                    uv_timer_start(&remote_ctx->http_timeout, remote_timeout_cb, conf.timeout, conf.timeout);
                     list_init(&remote_ctx->send_queue);
                     get_header(&ctx->packet.atyp, ctx->packet_buf, ATYP_LEN, ctx->packet.offset);
                     get_header(&ctx->packet.addrlen, ctx->packet_buf, ADDRLEN_LEN, ctx->packet.offset);
@@ -533,7 +541,6 @@ void setup_signal_handler(uv_loop_t *loop)
 
 int main(int argc, char **argv)
 {
-    conf_t  conf;
     memset(&conf, 0, sizeof(conf_t));
     int c, option_index = 0;
     char* configfile = NULL;

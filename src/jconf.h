@@ -24,6 +24,7 @@ typedef struct {
     uint32_t centralgw_address_len;
     int backend_mode;
     int pool_size;
+    int timeout;
 } conf_t;
 
 extern void read_conf(char* configfile, conf_t* conf);
