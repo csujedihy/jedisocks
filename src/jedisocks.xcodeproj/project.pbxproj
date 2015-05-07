@@ -122,10 +122,10 @@
 				C1F1534A1A9C7CE9009779D2 /* local.c */,
 				C1F1534B1A9C7CE9009779D2 /* local.h */,
 				C1F1534C1A9C7CE9009779D2 /* socks5.h */,
-				C1F1534D1A9C7CE9009779D2 /* utils.h */,
 				C1451D741A9DBBBB008BDE72 /* jconf.h */,
 				C1451D751A9DBF6C008BDE72 /* jconf.c */,
 				C1451D781A9DDB6F008BDE72 /* utils.c */,
+				C1F1534D1A9C7CE9009779D2 /* utils.h */,
 			);
 			path = "js-local";
 			sourceTree = "<group>";

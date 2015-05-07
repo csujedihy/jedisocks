@@ -125,7 +125,7 @@ typedef struct {
 
 typedef struct {
     TCP_HANDLE_BASIC
-    uv_timer_t http_timeout;
+
     int session_id;
     server_ctx_t* server_ctx;
     char host[257];
@@ -137,6 +137,7 @@ typedef struct {
     char addrlen;
     int stage;
     int closing;
+        uv_timer_t http_timeout;
 } remote_ctx_t;
 
 #endif

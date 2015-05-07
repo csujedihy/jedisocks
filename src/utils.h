@@ -66,6 +66,12 @@ while (0)
 #ifdef XCODE_DEBUG
 #define LOGW(format, ...)                                   \
 do {                                                        \
+    time_t now = time(NULL);                                \
+    char timestr[20];                                       \
+    strftime(timestr, 20, TIME_FORMAT, localtime(&now));    \
+    fprintf(stderr, " %s WARN: " format "\n",  \
+    timestr,## __VA_ARGS__);                                \
+    fflush(stderr);                                         \
 }                                                           \
 while (0)
 #else

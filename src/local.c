@@ -615,6 +615,7 @@ int main(int argc, char **argv) {
         ERROR("too large pool size!");
     for (int i = 0; i < listener->rc_pool_size; ++i) {
         listener->remote_long[i] = create_new_long_connection(listener, i);
+        try_to_connect_remote(listener->remote_long[i]);
     }
     
     uv_tcp_init(loop, &listener->server);

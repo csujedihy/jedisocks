@@ -100,6 +100,7 @@ static void remote_after_close_cb(uv_handle_t* handle) {
     remote_ctx_t* remote_ctx = (remote_ctx_t*)handle->data;
     LOGW("remote_close_cb remote_ctx = %x session_id = %d", remote_ctx, remote_ctx->session_id);
     if (remote_ctx != NULL) {
+        uv_timer_stop(&remote_ctx->http_timeout);
         if ((remote_ctx->server_ctx != NULL)) {
             remove_c_map(remote_ctx->server_ctx->idfd_map, &remote_ctx->session_id, NULL);
             send_EOF_packet(remote_ctx);
@@ -207,6 +208,7 @@ static void remote_write_cb(uv_write_t *req, int status) {
     
     assert(wr->req.type == UV_WRITE);
     //LOGD("send in remote_write_cb data = \n%s\n", wr->buf.base);
+    LOGW("uv_timer_again remote_ctx = %x", remote_ctx);
     uv_timer_again(&remote_ctx->http_timeout);
     packet_t* packet = list_get_head_elem(&remote_ctx->send_queue);
     if (packet) {
@@ -471,7 +473,8 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
                     remote_ctx->http_timeout.data = remote_ctx;
                     uv_tcp_init(loop, &remote_ctx->handle);
                     uv_timer_init(loop, &remote_ctx->http_timeout);
-                    //uv_timer_start(&remote_ctx->http_timeout, remote_timeout_cb, conf.timeout, conf.timeout);
+                    LOGW("uv_timer_start remote_ctx = %x http_timeout = %x", remote_ctx, &remote_ctx->http_timeout);
+                    uv_timer_start(&remote_ctx->http_timeout, remote_timeout_cb, 5000, 5000);
                     list_init(&remote_ctx->send_queue);
                     get_header(&ctx->packet.atyp, ctx->packet_buf, ATYP_LEN, ctx->packet.offset);
                     get_header(&ctx->packet.addrlen, ctx->packet_buf, ADDRLEN_LEN, ctx->packet.offset);
@@ -590,7 +593,7 @@ int main(int argc, char **argv)
         ERROR_UV("js-server: listen error", r);
 	LOGI("js-server: listen on %s:%d", conf.server_address, conf.serverport);
     
-    setup_signal_handler(loop);
+    //setup_signal_handler(loop);
 	uv_run(loop, UV_RUN_DEFAULT);
     uv_close((uv_handle_t*) &listener->handle, NULL);
     uv_loop_delete(loop);
