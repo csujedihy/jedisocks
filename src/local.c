@@ -548,7 +548,7 @@ static remote_ctx_t* create_new_long_connection(server_ctx_t* listener, int inde
 int main(int argc, char **argv) {
     memset(&conf, '\0', sizeof(conf));
     conf.pool_size = 5;    // default pool size = 5
-    int c, option_index = 0;
+    int c, option_index = 0, daemon = 0;
     char* configfile = NULL;
     opterr = 0;
     static struct option long_options[] =
@@ -556,7 +556,7 @@ int main(int argc, char **argv) {
         {0, 0, 0, 0}
     };
     
-    while ((c = getopt_long(argc, argv, "c:r:l:p:P:V:n",
+    while ((c = getopt_long(argc, argv, "c:r:l:p:P:V:n:d",
                             long_options, &option_index)) != -1) {
         switch (c) {
             case 'n':
@@ -579,6 +579,9 @@ int main(int argc, char **argv) {
             case 'V':
                 verbose = 1;
                 break;
+            case 'd':
+                daemon = 1;
+                break;
             default:
                 opterr = 1;
                 break;
@@ -598,6 +601,13 @@ int main(int argc, char **argv) {
         usage();
         exit(EXIT_FAILURE);
     }
+    
+#ifndef XCODE_DEBUG
+    if (daemon == 1) {
+        LOGI("js-local is working as deamon.");
+        init_daemon();
+    }
+#endif
     
     struct sockaddr_in bind_addr;
     struct sockaddr_in connect_addr;

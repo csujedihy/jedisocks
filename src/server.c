@@ -5,6 +5,7 @@
 #include <uv.h>
 #include <unistd.h>
 #include <getopt.h>
+#include <signal.h>
 #include "utils.h"
 #include "server.h"
 #include "c_map.h"
@@ -435,7 +436,7 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
                     pkt_to_send->data = malloc(ctx->packet.payloadlen);
                     get_header(pkt_to_send->data, ctx->packet_buf, ctx->packet.payloadlen, ctx->packet.offset);
                     LOGD("server_read_cb: (request)packet.data = \n%s\n",pkt_to_send->data);
-                    LOG_SHOW_BUFFER(pkt_to_send->data, pkt_to_send->payloadlen);
+                    //LOG_SHOW_BUFFER(pkt_to_send->data, pkt_to_send->payloadlen);
                     list_add_to_tail(&exist_ctx->send_queue, pkt_to_send);
                     LOGD("server_read_cb: ip: %d.%d.%d.%d", (unsigned char)exist_ctx->host[0], (unsigned char)exist_ctx->host[1], (unsigned char)exist_ctx->host[2], (unsigned char)exist_ctx->host[3]);
                     LOGD("server_read_cb: resovled = %d connected = %d", exist_ctx->resolved, exist_ctx->connected);
@@ -529,14 +530,16 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
 
 }
 
+
+
 int main(int argc, char **argv)
 {
     memset(&conf, 0, sizeof(conf_t));
-    int c, option_index = 0;
+    int c, option_index = 0, daemon = 0;
     char* configfile = NULL;
     opterr = 0;
     static struct option long_options[] = {{0, 0, 0, 0}};
-    while ((c = getopt_long(argc, argv, "c:r:l:p:P:V",
+    while ((c = getopt_long(argc, argv, "c:r:l:p:P:V:d",
                             long_options, &option_index)) != -1) {
         switch (c) {
             case 'c':
@@ -557,6 +560,9 @@ int main(int argc, char **argv)
             case 'V':
                 verbose = 1;
                 break;
+            case 'd':
+                daemon = 1;
+                break;
             default:
                 opterr = 1;
                 break;
@@ -575,6 +581,14 @@ int main(int argc, char **argv)
     }
     
     server_validate_conf(&conf);
+    
+#ifndef XCODE_DEBUG
+    if (daemon == 1) {
+        LOGI("js-server is working as deamon.");
+        init_daemon();
+    }
+#endif
+        
     loop = uv_default_loop();
     char* serverlog = "/tmp/server.log";
     if (log_to_file)
