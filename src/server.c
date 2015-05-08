@@ -38,7 +38,13 @@ static void server_exception(server_ctx_t* server_ctx);
 static void remote_timeout_cb(uv_timer_t* handle) {
     LOGW("remote timeout, ready to close remote connection");
     remote_ctx_t* remote_ctx = handle->data;
-    HANDLECLOSE(&remote_ctx->handle, remote_after_close_cb);
+    uv_timer_stop(&remote_ctx->http_timeout);
+    if (!uv_is_closing((uv_handle_t*)&remote_ctx->handle)) {
+        if (remote_ctx->resolved == 1)
+            uv_close((uv_handle_t*)&remote_ctx->handle, remote_after_close_cb);
+        else
+            remote_ctx->closing = 1;
+    }
 }
 
 static void server_after_close_cb(uv_handle_t* handle) {
@@ -101,7 +107,6 @@ static void remote_after_close_cb(uv_handle_t* handle) {
     remote_ctx_t* remote_ctx = (remote_ctx_t*)handle->data;
     LOGW("remote_close_cb remote_ctx = %x session_id = %d", remote_ctx, remote_ctx->session_id);
     if (remote_ctx != NULL) {
-        uv_timer_stop(&remote_ctx->http_timeout);
         if ((remote_ctx->server_ctx != NULL)) {
             remove_c_map(remote_ctx->server_ctx->idfd_map, &remote_ctx->session_id, NULL);
             send_EOF_packet(remote_ctx);
@@ -606,7 +611,6 @@ int main(int argc, char **argv)
 	if (r)
         ERROR_UV("js-server: listen error", r);
 	LOGI("js-server: listen on %s:%d", conf.server_address, conf.serverport);
-    
     //setup_signal_handler(loop);
 	uv_run(loop, UV_RUN_DEFAULT);
     uv_close((uv_handle_t*) &listener->handle, NULL);
