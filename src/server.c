@@ -38,8 +38,7 @@ static void server_exception(server_ctx_t* server_ctx);
 static void remote_timeout_cb(uv_timer_t* handle) {
     LOGW("remote timeout, ready to close remote connection");
     remote_ctx_t* remote_ctx = handle->data;
-    uv_timer_stop(&remote_ctx->http_timeout);
-    if (!uv_is_closing((uv_handle_t*)&remote_ctx->handle)) {
+        if (!uv_is_closing((uv_handle_t*)&remote_ctx->handle)) {
         if (remote_ctx->resolved == 1)
             uv_close((uv_handle_t*)&remote_ctx->handle, remote_after_close_cb);
         else
@@ -107,6 +106,7 @@ static void remote_after_close_cb(uv_handle_t* handle) {
     remote_ctx_t* remote_ctx = (remote_ctx_t*)handle->data;
     LOGW("remote_close_cb remote_ctx = %x session_id = %d", remote_ctx, remote_ctx->session_id);
     if (remote_ctx != NULL) {
+        uv_timer_stop(&remote_ctx->http_timeout);
         if ((remote_ctx->server_ctx != NULL)) {
             remove_c_map(remote_ctx->server_ctx->idfd_map, &remote_ctx->session_id, NULL);
             send_EOF_packet(remote_ctx);
@@ -464,7 +464,7 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
                         //try_to_connect_remote(exist_ctx);
                     }
                     LOGD("buf_len = %d, reset = %d, stage = %d, expect_to_recv %d", ctx->buf_len, ctx->reset, ctx->stage, ctx->expect_to_recv);
-                    LOGW("server_read_cb:2 remote_ctx = %x session_id = %d type = %d\n", exist_ctx, exist_ctx->session_id,exist_ctx->handle.type);
+                    LOGW("server_read_cb:2 remote_ctx = %x session_id = %d type = %d", exist_ctx, exist_ctx->session_id,exist_ctx->handle.type);
                 }
                 else
                 {
@@ -480,7 +480,7 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
                     uv_tcp_init(loop, &remote_ctx->handle);
                     uv_timer_init(loop, &remote_ctx->http_timeout);
                     LOGW("uv_timer_start remote_ctx = %x http_timeout = %x", remote_ctx, &remote_ctx->http_timeout);
-                    uv_timer_start(&remote_ctx->http_timeout, remote_timeout_cb, 5000, 5000);
+                    uv_timer_start(&remote_ctx->http_timeout, remote_timeout_cb, conf.timeout, conf.timeout);
                     list_init(&remote_ctx->send_queue);
                     get_header(&ctx->packet.atyp, ctx->packet_buf, ATYP_LEN, ctx->packet.offset);
                     get_header(&ctx->packet.addrlen, ctx->packet_buf, ADDRLEN_LEN, ctx->packet.offset);

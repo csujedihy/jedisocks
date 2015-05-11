@@ -3,8 +3,9 @@
     "server":"127.0.0.1",
     "server_port":7001,
     "local_port":7000,
-    "gateway_port":80,
+    "gateway_port":90,
     "gateway_address":"192.168.0.200",
     "backend_mode":0,
-    "pool_size":6
+    "pool_size":5,
+    "timeout":30
 }

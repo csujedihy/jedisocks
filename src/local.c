@@ -643,6 +643,10 @@ int main(int argc, char **argv) {
     if (r)
         ERROR_UV("listen error port", r);
     LOGI("Listening on localhost:7000");
+    struct in_addr s;
+//    char* localhost_str = "127.0.0.1";
+//    inet_pton(AF_INET, localhost_str, &s);
+//    LOGW("%x\n",s.s_addr);
     uv_run(loop, UV_RUN_DEFAULT);
     CLOSE_LOGFILE;
     return 0;

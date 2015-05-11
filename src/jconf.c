@@ -123,5 +123,4 @@ if (val != NULL)
 
     free(configbuf);
     
-    // should be improved, configbuf will not be freed in some specific cases
 }
