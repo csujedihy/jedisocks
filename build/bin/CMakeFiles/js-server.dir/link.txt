@@ -1,0 +1,1 @@
+/usr/bin/cc  -std=gnu99 -g -O2 -Wl,-search_paths_first -Wl,-headerpad_max_install_names  CMakeFiles/js-server.dir/server.c.o CMakeFiles/js-server.dir/c_map.c.o CMakeFiles/js-server.dir/js0n.c.o CMakeFiles/js-server.dir/utils.c.o CMakeFiles/js-server.dir/jconf.c.o  -o js-server  -luv 

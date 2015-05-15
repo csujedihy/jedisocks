@@ -1,0 +1,2 @@
+/Users/jedihy/Documents/Project/jedisocks/build/bin/CMakeFiles/js-local.dir
+/Users/jedihy/Documents/Project/jedisocks/build/bin/CMakeFiles/js-server.dir
