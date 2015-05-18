@@ -70,16 +70,12 @@ static void socks_after_close_cb(uv_handle_t* handle) {
     LOGD("socks_after_close_cb");
     socks_handshake_t *socks_hsctx = (socks_handshake_t *)handle->data;
     if (likely(socks_hsctx != NULL)) {
-        if (socks_hsctx->remote_long != NULL)
+        if (socks_hsctx->remote_long != NULL) {
             send_EOF_packet(socks_hsctx, socks_hsctx->remote_long);
-        socks_hsctx->closed++;
-        if (socks_hsctx->closed == 2) {
-            LOGD("session %d is removed from session map and ctx is freed", socks_hsctx->session_id);
-            // add a comment
-            if (socks_hsctx->remote_long != NULL)
-                remove_c_map(socks_hsctx->remote_long->idfd_map, &socks_hsctx->session_id, NULL);
-            free(socks_hsctx);
+            remove_c_map(socks_hsctx->remote_long->idfd_map, &socks_hsctx->session_id, NULL);
         }
+            // add a comment
+        free(socks_hsctx);
     }
     else
         LOGD("socks_after_close_cb: socks_hsctx == NULL?");
@@ -192,17 +188,7 @@ static void remote_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *b
 
                     if (find_c_map(ctx->idfd_map, &ctx->tmp_packet.session_id, &exist_ctx))
                     {
-                        exist_ctx->closed++;
-                        if (exist_ctx->closed == 2) {
-                            // client passively removes and frees session
-                            LOGD("session %d is removed from session map and ctx is freed", exist_ctx->session_id);
-                            if (exist_ctx->remote_long != NULL)
-                                remove_c_map(exist_ctx->remote_long->idfd_map, &exist_ctx->session_id, NULL);
-                                free(exist_ctx);
-                            // add session id to idle session id list
-                        }
-                        
-                        // remote is closing, so shutdown SOCKS5 socket
+
                         if (!uv_is_closing((uv_handle_t*)&exist_ctx->server)) {
                             uv_read_stop((uv_stream_t *)&exist_ctx->server);
                             uv_shutdown_t *req = malloc(sizeof(uv_shutdown_t));
@@ -420,6 +406,7 @@ static void socks_handshake_read_cb(uv_stream_t *client, ssize_t nread, const uv
             }
             else
             {
+                // redundant?
                 if (socks_hsctx->closing == 1)
                 {
                     free(buf->base);

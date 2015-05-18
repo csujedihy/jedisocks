@@ -44,7 +44,6 @@
 
 /* Begin PBXFileReference section */
 		C11EC93A1AA5770900E289C0 /* main.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = main.c; sourceTree = "<group>"; };
-		C11EC93F1AA5774A00E289C0 /* libz.1.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libz.1.dylib; path = ../../../../../../usr/local/lib/libz.1.dylib; sourceTree = "<group>"; };
 		C1451D701A9DA971008BDE72 /* js0n.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = js0n.c; sourceTree = SOURCE_ROOT; };
 		C1451D711A9DA971008BDE72 /* js0n.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = js0n.h; sourceTree = SOURCE_ROOT; };
 		C1451D741A9DBBBB008BDE72 /* jconf.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = jconf.h; sourceTree = SOURCE_ROOT; };
@@ -94,7 +93,6 @@
 		C1F1531F1A9C7BE8009779D2 = {
 			isa = PBXGroup;
 			children = (
-				C11EC93F1AA5774A00E289C0 /* libz.1.dylib */,
 				C1EA7FCB1A9C7ED4009C01F6 /* libuv.1.dylib */,
 				C1F153371A9C7C46009779D2 /* js-local */,
 				C1F153421A9C7C5B009779D2 /* js-server */,

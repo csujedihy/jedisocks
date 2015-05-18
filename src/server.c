@@ -387,8 +387,7 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
                 // CTL_CLOSE means peer wanted to close this session -> FIN
                 // peer has to make sure no more data issued on this session 
                 if (ctx->packet.rsv == CTL_CLOSE) {
-                    LOGW("received a packet with CTL_CLOSE (0x04)");
-                    LOGW("session id = %d", ctx->packet.session_id);
+                    LOGW("received a packet with CTL_CLOSE (0x04) session id = %d", ctx->packet.session_id);
                     remote_ctx_t* exist_ctx = NULL;
                     if (find_c_map(ctx->idfd_map, &ctx->packet.session_id, &exist_ctx)){
                         if (exist_ctx != NULL) {
@@ -407,9 +406,12 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
                         else
                             LOGW("found a NULL remote_ctx to free");
                     }
-                    else
+                    else {
                         LOGW("warning: closing an non-existent remote_ctx");
                         
+                        
+                    }
+                    
                     ctx->reset = 0;
                     ctx->expect_to_recv = EXP_TO_RECV_LEN;
                 }
