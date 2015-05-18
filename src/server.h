@@ -17,6 +17,7 @@
 #define CTL_CLOSE 0x04
 #define CTL_INIT 0x01
 #define CTL_NORMAL 0
+#define CTL_CLOSE_ACK 0x03
 
 #define packet_payload_alloc(packet, flag) \
 do { \
@@ -125,7 +126,6 @@ typedef struct {
 
 typedef struct {
     TCP_HANDLE_BASIC
-
     int session_id;
     server_ctx_t* server_ctx;
     char host[257];
@@ -137,7 +137,8 @@ typedef struct {
     char addrlen;
     int stage;
     int closing;
-        uv_timer_t http_timeout;
+    int ctl_cmd;
+    uv_timer_t http_timeout;
 } remote_ctx_t;
 
 #endif

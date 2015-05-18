@@ -180,24 +180,36 @@ static void remote_read_cb(uv_stream_t *client, ssize_t nread, const uv_buf_t *b
                 if (verbose) LOGD("datalen = %d\n", ctx->tmp_packet.datalen);
                 ctx->expect_to_recv = ctx->tmp_packet.datalen;
                 ctx->stage = 1;
-                if (ctx->tmp_packet.rsv == CTL_CLOSE) {
+                
+                if (ctx->tmp_packet.rsv != CTL_NORMAL) {
                     ctx->reset = 0;
                     ctx->expect_to_recv = HDR_LEN;
-                    LOGD("received a CTL_CLOSE(0x04) packet -- session in js-server is closed");
-                    socks_handshake_t* exist_ctx = NULL;
-
-                    if (find_c_map(ctx->idfd_map, &ctx->tmp_packet.session_id, &exist_ctx))
-                    {
-
-                        if (!uv_is_closing((uv_handle_t*)&exist_ctx->server)) {
-                            uv_read_stop((uv_stream_t *)&exist_ctx->server);
-                            uv_shutdown_t *req = malloc(sizeof(uv_shutdown_t));
-                            req->data          = exist_ctx;
-                            uv_shutdown(req, (uv_stream_t*)&exist_ctx->server, socks_after_shutdown_cb);
+                    if (CTL_CLOSE == ctx->tmp_packet.rsv) {
+                        LOGD("received a CTL_CLOSE(0x04) packet -- session in js-server is closed");
+                        socks_handshake_t* exist_ctx = NULL;
+                        
+                        if (find_c_map(ctx->idfd_map, &ctx->tmp_packet.session_id, &exist_ctx))
+                        {
+                            
+                            if (!uv_is_closing((uv_handle_t*)&exist_ctx->server)) {
+                                uv_read_stop((uv_stream_t *)&exist_ctx->server);
+                                uv_shutdown_t *req = malloc(sizeof(uv_shutdown_t));
+                                req->data          = exist_ctx;
+                                uv_shutdown(req, (uv_stream_t*)&exist_ctx->server, socks_after_shutdown_cb);
+                            }
+                            
                         }
-                    
                     }
+                    else if (CTL_CLOSE_ACK == ctx->tmp_packet.rsv) {
+                        // add this session id to available session list
+                        LOGW("Received a CTL_CLOSE_ACK");
+                        session_t* avl_session = malloc(sizeof(session_t));
+                        avl_session->session_id = ctx->tmp_packet.session_id;
+                        list_add_to_tail(&ctx->avl_session_list, avl_session);
+                    }
+
                 }
+                
             }
             else{
                 LOGD("< header length... gather more");
@@ -276,6 +288,7 @@ static int try_to_connect_remote(remote_ctx_t* ctx) {
 
 // socks accept callback
 static void socks_accept_cb(uv_stream_t *server, int status) {
+    LOGW("accepting a new socks5 connection");
     static int round_robin_index = 0;
     if (status)
         ERROR_UV("async connect", status);
@@ -319,11 +332,21 @@ static void socks_accept_cb(uv_stream_t *server, int status) {
                 break;
         }
         
-        socks_hsctx->session_id = ++socks_hsctx->remote_long->sid;
+        session_t* avl_session = list_get_head_elem(&socks_hsctx->remote_long->avl_session_list);
+        if (NULL != avl_session) {
+            socks_hsctx->session_id = avl_session->session_id;
+            list_remove_elem(avl_session);
+            free(avl_session);
+            avl_session = NULL;
+        }
+        else {
+            socks_hsctx->session_id = ++socks_hsctx->remote_long->sid;
+            if (socks_hsctx->remote_long->sid == INT_MAX)
+                socks_hsctx->remote_long->sid = 0;
+        }
         insert_c_map (socks_hsctx->remote_long->idfd_map, &socks_hsctx->session_id, sizeof(int), socks_hsctx, sizeof(int));
         LOGW("Insert session id = %d into map", socks_hsctx->session_id);
-        if (socks_hsctx->remote_long->sid == INT_MAX)
-            socks_hsctx->remote_long->sid = 0;
+
     }
     
     // if pool size is adaptively adjusted, ...
@@ -528,6 +551,7 @@ static remote_ctx_t* create_new_long_connection(server_ctx_t* listener, int inde
     remote_ctx_long->idfd_map        = map;
     uv_tcp_init(loop, &remote_ctx_long->remote);
     list_init(&remote_ctx_long->managed_socks_list);
+    list_init(&remote_ctx_long->avl_session_list);
     uv_tcp_nodelay(&remote_ctx_long->remote, 1);
     return remote_ctx_long;
 }

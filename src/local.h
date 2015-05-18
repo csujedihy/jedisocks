@@ -7,6 +7,7 @@
 #define CTL_CLOSE 0x04
 #define CTL_INIT 0x01
 #define CTL_NORMAL 0
+#define CTL_CLOSE_ACK 0x03
 
 // packet related MACROs
 #define MAX_PKT_SIZE 8192
@@ -98,6 +99,16 @@ typedef struct socks_connection_list{
     socks_handshake_t head;
 } socks_connection_list_t;
 
+typedef struct session {
+    int session_id;
+    struct session* prev;
+    struct session* next;
+} session_t;
+
+typedef struct avl_session_list {
+    session_t head;
+} avl_session_list_t;
+
 typedef struct remote_ctx
 {
 	uv_tcp_t remote;
@@ -115,6 +126,7 @@ typedef struct remote_ctx
     int expect_to_recv;
     uint32_t sid;
     socks_connection_list_t managed_socks_list; // SOCKS5 connections managed by this remote_ctx
+    avl_session_list_t avl_session_list;
     int connected;
     int rc_index;
 } remote_ctx_t;

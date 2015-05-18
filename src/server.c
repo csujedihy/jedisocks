@@ -32,7 +32,7 @@ static void remote_timeout_cb(uv_timer_t* handle);
 
 // customized functions
 static int try_to_connect_remote(remote_ctx_t* remote_ctx);
-static void send_EOF_packet(remote_ctx_t* remote_ctx);
+static void send_EOF_packet(remote_ctx_t* remote_ctx, int cmd);
 static void server_exception(server_ctx_t* server_ctx);
 
 static void remote_timeout_cb(uv_timer_t* handle) {
@@ -83,12 +83,12 @@ static void server_exception(server_ctx_t* server_ctx) {
     }
 }
 
-static void send_EOF_packet(remote_ctx_t* ctx){
+static void send_EOF_packet(remote_ctx_t* ctx, int cmd){
     int offset = 0;
     char* pkt_buf       = malloc(HDRLEN);
     uint32_t session_id = htonl((uint32_t)ctx->session_id);
     uint16_t datalen    = 0;
-    uint8_t rsv            = CTL_CLOSE;
+    uint8_t rsv            = cmd;
     LOGW("send_EOF_packet session id = %d",ctx->session_id);
     LOGD("the session id of the closing session is %d", ctx->session_id);
 
@@ -99,7 +99,7 @@ static void send_EOF_packet(remote_ctx_t* ctx){
     write_req_t *wr = (write_req_t*) malloc(sizeof(write_req_t));
     wr->req.data = ctx->server_ctx;
     wr->buf = uv_buf_init(pkt_buf, EXP_TO_RECV_LEN);
-    int r = uv_write(&wr->req, (uv_stream_t*)&ctx->server_ctx->handle, &wr->buf, 1, server_write_cb);
+    uv_write(&wr->req, (uv_stream_t*)&ctx->server_ctx->handle, &wr->buf, 1, server_write_cb);
 }
 
 static void remote_after_close_cb(uv_handle_t* handle) {
@@ -109,7 +109,10 @@ static void remote_after_close_cb(uv_handle_t* handle) {
         uv_timer_stop(&remote_ctx->http_timeout);
         if ((remote_ctx->server_ctx != NULL)) {
             remove_c_map(remote_ctx->server_ctx->idfd_map, &remote_ctx->session_id, NULL);
-            send_EOF_packet(remote_ctx);
+            if (CTL_CLOSE == remote_ctx->ctl_cmd)
+                send_EOF_packet(remote_ctx, CTL_CLOSE_ACK);
+            else if (CTL_NORMAL == remote_ctx->ctl_cmd)
+                send_EOF_packet(remote_ctx, CTL_CLOSE);
         }
         packet_t* packet_to_free = NULL;
         while ((packet_to_free = list_get_head_elem(&remote_ctx->send_queue))) {
@@ -394,6 +397,7 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
                             // stop watching read I/O
                             // elegantly close
                             // closing == 4, peer closing in charge, just close remote
+                            exist_ctx->ctl_cmd = CTL_CLOSE;
                             LOGW("exist session close remote_ctx = %x\n", exist_ctx);
                             uv_read_stop((uv_stream_t *)&exist_ctx->handle);
                             if (!uv_is_closing((uv_handle_t*)&exist_ctx->handle)) {
@@ -407,8 +411,11 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
                             LOGW("found a NULL remote_ctx to free");
                     }
                     else {
-                        LOGW("warning: closing an non-existent remote_ctx");
-                        
+                        LOGW("warning: closing an non-existent remote_ctx which means this session id is safe to be reused in local-side");
+                        remote_ctx_t tmp_remote_ctx;
+                        tmp_remote_ctx.session_id = ctx->packet.session_id;
+                        tmp_remote_ctx.server_ctx = ctx;
+                        send_EOF_packet(&tmp_remote_ctx, CTL_CLOSE_ACK);
                         
                     }
                     
@@ -476,6 +483,7 @@ static void server_read_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *b
                         return;
                     }
                     remote_ctx_t* remote_ctx = calloc(1, sizeof(remote_ctx_t));
+                    remote_ctx->ctl_cmd = CTL_NORMAL;
                     remote_ctx->server_ctx  = ctx;
                     remote_ctx->handle.data = remote_ctx;
                     remote_ctx->http_timeout.data = remote_ctx;
