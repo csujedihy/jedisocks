@@ -29,7 +29,6 @@ int server_validate_conf(conf_t* conf) {
 }
 
 void read_conf(char* configfile, conf_t* conf) {
-    conf_t* config = conf;
     char* val = NULL;
     char* configbuf = NULL;
     char localport_buf[6]    = {0};
@@ -54,7 +53,7 @@ void read_conf(char* configfile, conf_t* conf) {
         FATAL("No enough memory.");
     }
     
-    int nread = fread(configbuf, pos, 1, f);
+    size_t nread = fread(configbuf, pos, 1, f);
     if (!nread) {
         FATAL("Failed to read the config file.");
     }

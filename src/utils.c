@@ -13,7 +13,8 @@
 #include <unistd.h>
 #include "utils.h"
 
-void usage() {
+void usage()
+{
     printf("\
 Jedisocks v1.0\n\
   developed by Jedihy\n\
@@ -27,49 +28,50 @@ Jedisocks v1.0\n\
     ");
 }
 
-void init_daemon() {
+void init_daemon()
+{
     pid_t pid;
-    
+
     /* Fork off the parent process */
     pid = fork();
-    
+
     /* An error occurred */
     if (pid < 0)
         exit(EXIT_FAILURE);
-    
+
     /* Success: Let the parent terminate */
     if (pid > 0)
         exit(EXIT_SUCCESS);
-    
+
     /* On success: The child process becomes session leader */
     if (setsid() < 0)
         exit(EXIT_FAILURE);
-    
+
     /* Catch, ignore and handle signals */
     //TODO: Implement a working signal handler */
     signal(SIGCHLD, SIG_IGN);
     signal(SIGHUP, SIG_IGN);
-    
+
     /* Fork off for the second time*/
     pid = fork();
-    
+
     /* An error occurred */
     if (pid < 0)
         exit(EXIT_FAILURE);
-    
+
     /* Success: Let the parent terminate */
     if (pid > 0)
         exit(EXIT_SUCCESS);
-    
+
     /* Set new file permissions */
     umask(0);
-    
+
     /* Change the working directory to the root directory */
     /* or another appropriated directory */
     chdir("./");
 }
 
-void signal_handler(uv_signal_t *handle, int signum)
+void signal_handler(uv_signal_t* handle, int signum)
 {
     printf("Ctrl+C pressed %d\n", signum);
     uv_loop_t* loop = handle->data;
@@ -77,22 +79,13 @@ void signal_handler(uv_signal_t *handle, int signum)
     uv_stop(loop);
     uv_loop_delete(loop);
     exit(0);
-    
 }
 
-void setup_signal_handler(uv_loop_t *loop)
+void setup_signal_handler(uv_loop_t* loop)
 {
     signal(SIGPIPE, SIG_IGN);
     uv_signal_t sigint;
     sigint.data = loop;
     int n = uv_signal_init(loop, &sigint);
     n = uv_signal_start(&sigint, signal_handler, SIGINT);
-}
-
-
-// for performance tunning
-struct timeval GetTimeStamp() {
-    struct timeval tv;
-    gettimeofday(&tv,NULL);
-    return tv;
 }

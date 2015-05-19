@@ -11,6 +11,8 @@
 #include "socks5.h"
 #include "c_map.h"
 
+//TODO: change write_cb status code handling (UV_ECANCELED)
+
 // callback functions
 static void socks_handshake_alloc_cb(uv_handle_t* handle, size_t size, uv_buf_t* buf);
 static void socks_handshake_read_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf);
@@ -174,7 +176,6 @@ static void remote_read_cb(uv_stream_t* client, ssize_t nread, const uv_buf_t* b
         if (verbose)
             LOGD("buf_len after = %d\n", ctx->buf_len);
 
-        // TODO: fix the expected to recv buffer size
         if (ctx->stage == 0) {
             if (likely(ctx->buf_len == HDR_LEN)) {
                 get_header(&ctx->tmp_packet.session_id, ctx->packet_buf, ID_LEN, ctx->offset);
@@ -290,8 +291,10 @@ static void socks_accept_cb(uv_stream_t* server, int status)
 {
     LOGW("accepting a new socks5 connection");
     static int round_robin_index = 0;
-    if (status)
-        ERROR_UV("async connect", status);
+    if (status) {
+        LOGW("async connect error %d", status);
+        return;
+    }
     server_ctx_t* listener = (server_ctx_t*)server->data;
     socks_handshake_t* socks_hsctx = calloc(1, sizeof(socks_handshake_t));
     socks_hsctx->server.data = socks_hsctx;
@@ -418,7 +421,7 @@ static void socks_handshake_read_cb(uv_stream_t* client, ssize_t nread, const uv
                     write_req_t* wr = (write_req_t*)malloc(sizeof(write_req_t));
                     wr->req.data = socks_hsctx->remote_long;
                     wr->buf = uv_buf_init(pkt_buf, ID_LEN + RSV_LEN + DATALEN_LEN + ATYP_LEN
-                            + ADDRLEN_LEN + socks_hsctx->addrlen + PORT_LEN + nread);
+                            + ADDRLEN_LEN + socks_hsctx->addrlen + PORT_LEN + (unsigned int)nread);
                     int r = uv_write(&wr->req, (uv_stream_t*)&socks_hsctx->remote_long->remote, &wr->buf, 1, remote_write_cb);
                     if (r) {
                         free(wr);
@@ -452,7 +455,7 @@ static void socks_handshake_read_cb(uv_stream_t* client, ssize_t nread, const uv
                 if (socks_hsctx->remote_long != NULL) {
                     write_req_t* wr = (write_req_t*)malloc(sizeof(write_req_t));
                     wr->req.data = socks_hsctx->remote_long;
-                    wr->buf = uv_buf_init(pkt_buf, ID_LEN + RSV_LEN + DATALEN_LEN + nread);
+                    wr->buf = uv_buf_init(pkt_buf, ID_LEN + RSV_LEN + DATALEN_LEN + (unsigned int)nread);
                     int r = uv_write(&wr->req, (uv_stream_t*)&socks_hsctx->remote_long->remote, &wr->buf, 1, remote_write_cb);
                     if (r) {
                         free(wr);
@@ -614,7 +617,7 @@ int main(int argc, char** argv)
     LOGI("Backend mode = %d (1 = ON, 0 = OFF)", conf.backend_mode);
     LOGI("Connection Pool size = %d", conf.pool_size);
 
-    if (opterr || argc == 1 || conf.serverport == NULL || conf.server_address == NULL || conf.localport == NULL || conf.local_address == NULL) {
+    if (opterr || argc == 1 || conf.serverport == 0 || conf.server_address == NULL || conf.localport == 0 || conf.local_address == NULL) {
         printf("Error: 1) pass wrong or null args to the program.\n");
         printf("       2) parse config file failed.\n");
         usage();
