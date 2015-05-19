@@ -131,7 +131,4 @@ typedef struct remote_ctx
     int rc_index;
 } remote_ctx_t;
 
-
-
-
 #endif
