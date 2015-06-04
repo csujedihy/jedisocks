@@ -406,8 +406,6 @@ static void socks_handshake_read_cb(uv_stream_t* client, ssize_t nread, const uv
                 int offset = 0;
                 char* pkt_buf = malloc(ID_LEN + RSV_LEN + DATALEN_LEN + ATYP_LEN + ADDRLEN_LEN
                     + socks_hsctx->addrlen + PORT_LEN + nread);
-                packet_t* pkt = calloc(1, sizeof(packet_t));
-                pkt->rawpacket = pkt_buf;
                 char rsv = CTL_INIT;
                 uint32_t id_to_send = htonl((uint32_t)(socks_hsctx->session_id));
                 uint16_t datalen_to_send = htons((uint16_t)(ATYP_LEN + ADDRLEN_LEN + socks_hsctx->addrlen + PORT_LEN + nread));
@@ -448,8 +446,6 @@ static void socks_handshake_read_cb(uv_stream_t* client, ssize_t nread, const uv
                 }
                 int offset = 0;
                 char* pkt_buf = calloc(1, ID_LEN + RSV_LEN + DATALEN_LEN + nread);
-                packet_t* pkt = calloc(1, sizeof(packet_t));
-                pkt->rawpacket = pkt_buf;
                 char rsv = CTL_NORMAL;
                 uint32_t id_to_send = ntohl((uint32_t)(socks_hsctx->session_id));
                 uint16_t datalen_to_send = ntohs((uint16_t)nread);
