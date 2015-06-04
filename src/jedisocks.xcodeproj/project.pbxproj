@@ -60,6 +60,7 @@
 		C1F1534D1A9C7CE9009779D2 /* utils.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = utils.h; sourceTree = SOURCE_ROOT; };
 		C1F153501A9C7CF4009779D2 /* server.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; path = server.c; sourceTree = SOURCE_ROOT; };
 		C1F153511A9C7CF4009779D2 /* server.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = server.h; sourceTree = SOURCE_ROOT; };
+		C1F371FD1B201D3300FF9D96 /* tree.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = tree.h; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -113,6 +114,7 @@
 		C1F153371A9C7C46009779D2 /* js-local */ = {
 			isa = PBXGroup;
 			children = (
+				C1F371FD1B201D3300FF9D96 /* tree.h */,
 				C1451D701A9DA971008BDE72 /* js0n.c */,
 				C1451D711A9DA971008BDE72 /* js0n.h */,
 				C1F153481A9C7CE9009779D2 /* c_map.c */,

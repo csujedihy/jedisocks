@@ -71,14 +71,16 @@ utils.h
 /Users/jedihy/Documents/Project/jedisocks/src/utils.h
 socks5.h
 /Users/jedihy/Documents/Project/jedisocks/src/socks5.h
-c_map.h
-/Users/jedihy/Documents/Project/jedisocks/src/c_map.h
 
 /Users/jedihy/Documents/Project/jedisocks/src/local.h
 c_map.h
 /Users/jedihy/Documents/Project/jedisocks/src/c_map.h
+tree.h
+/Users/jedihy/Documents/Project/jedisocks/src/tree.h
 
 /Users/jedihy/Documents/Project/jedisocks/src/socks5.h
+
+/Users/jedihy/Documents/Project/jedisocks/src/tree.h
 
 /Users/jedihy/Documents/Project/jedisocks/src/utils.c
 stdio.h

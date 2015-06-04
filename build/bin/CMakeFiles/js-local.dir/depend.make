@@ -16,6 +16,7 @@ bin/CMakeFiles/js-local.dir/local.c.o: ../src/jconf.h
 bin/CMakeFiles/js-local.dir/local.c.o: ../src/local.c
 bin/CMakeFiles/js-local.dir/local.c.o: ../src/local.h
 bin/CMakeFiles/js-local.dir/local.c.o: ../src/socks5.h
+bin/CMakeFiles/js-local.dir/local.c.o: ../src/tree.h
 bin/CMakeFiles/js-local.dir/local.c.o: ../src/utils.h
 
 bin/CMakeFiles/js-local.dir/utils.c.o: ../src/utils.c

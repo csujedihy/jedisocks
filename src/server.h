@@ -28,21 +28,10 @@
         packet.data = calloc(1, packet.payloadlen);                                                  \
     } while (0)
 
-#define addrinfo_hints_init(hints)       \
-    do {                                 \
-        hints.ai_family = PF_INET;       \
-        hints.ai_socktype = SOCK_STREAM; \
-        hints.ai_protocol = IPPROTO_TCP; \
-        hints.ai_flags = 0;              \
-    } while (0)
-
-// reset packet buf
-// reset packet structure
 #define packetnbuf_reset(ctx)                      \
     do {                                           \
         ctx->buf_len = 0;                          \
         ctx->stage = 0;                            \
-        memset(ctx->packet_buf, 0, MAX_PKT_SIZE);  \
         memset(&ctx->packet, 0, sizeof(packet_t)); \
         ctx->reset = 1;                            \
     } while (0)

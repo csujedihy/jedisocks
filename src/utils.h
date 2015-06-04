@@ -17,9 +17,11 @@ extern FILE* logfile;
 #define unlikely(x) (x)
 #endif
 
+#define NODEBUGSHOW
 #define TIME_FORMAT "%Y-%m-%d %H:%M:%S"
 #define COLORDEF_GREEM \e[01;32m
 #define COLORDEF_WHITE \e[0m
+
 #define USE_LOGFILE(ident)                \
     do {                                  \
         if (ident != NULL) {              \
@@ -66,6 +68,9 @@ extern FILE* logfile;
     } while (0)
 #endif
 
+#ifdef NODEBUGSHOW
+#define LOGW(format, ...)
+#else
 #ifdef XCODE_DEBUG
 #define LOGW(format, ...)                                                               \
     do {                                                                                \
@@ -90,6 +95,7 @@ extern FILE* logfile;
             fflush(stderr);                                                                  \
         }                                                                                    \
     } while (0)
+#endif
 #endif
 
 #define _LOGD(format, ...)                                                                   \
@@ -185,8 +191,8 @@ extern FILE* logfile;
     do {                                                            \
         if (r) {                                                    \
             if (wr) {                                               \
-                free(wr);                                           \
                 free((wr)->buf.base);                               \
+                free(wr);                                           \
             }                                                       \
             if (!uv_is_closing((uv_handle_t*)handle_addr)) {        \
                 uv_read_stop((uv_stream_t*)handle_addr);            \
