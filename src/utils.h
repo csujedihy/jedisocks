@@ -80,19 +80,19 @@ extern FILE* logfile;
         fflush(stderr);                                                                 \
     } while (0)
 #else
-#define LOGW(format, ...)                                                                    \
-    do {                                                                                     \
-        time_t now = time(NULL);                                                             \
-        char timestr[20];                                                                    \
-        strftime(timestr, 20, TIME_FORMAT, localtime(&now));                                 \
-        if (logfile != NULL) {                                                               \
-            fprintf(logfile, "\x1b[33m %s WARN: \e[0m" format "\n", timestr, ##__VA_ARGS__); \
-            fflush(logfile);                                                                 \
-        }                                                                                    \
-        else {                                                                               \
-            fprintf(stderr, "\x1b[33m %s WARN: \e[0m" format "\n", timestr, ##__VA_ARGS__);  \
-            fflush(stderr);                                                                  \
-        }                                                                                    \
+#define LOGW(format, ...)                                                                   \
+    do {                                                                                    \
+        time_t now = time(NULL);                                                            \
+        char timestr[20];                                                                   \
+        strftime(timestr, 20, TIME_FORMAT, localtime(&now));                                \
+        if (logfile != NULL) {                                                              \
+            fprintf(logfile, " %s WARN: " format "\n", timestr, ##__VA_ARGS__);             \
+            fflush(logfile);                                                                \
+        }                                                                                   \
+        else {                                                                              \
+            fprintf(stderr, "\x1b[33m %s WARN: \e[0m" format "\n", timestr, ##__VA_ARGS__); \
+            fflush(stderr);                                                                 \
+        }                                                                                   \
     } while (0)
 #endif
 #endif
@@ -100,24 +100,26 @@ extern FILE* logfile;
 #ifdef NODEBUGSHOW
 #define LOGD(format, ...)
 #else
-#define LOGD(format, ...)                                                                    \
-    do {                                                                                     \
-        if (logfile != NULL) {                                                               \
-            time_t now = time(NULL);                                                         \
-            char timestr[20];                                                                \
-            strftime(timestr, 20, TIME_FORMAT, localtime(&now));                             \
-            fprintf(logfile, "\x1b[32m %s INFO: \e[0m" format "\n", timestr, ##__VA_ARGS__); \
-            fflush(logfile);                                                                 \
-        }                                                                                    \
-        else {                                                                               \
-            time_t now = time(NULL);                                                         \
-            char timestr[20];                                                                \
-            strftime(timestr, 20, TIME_FORMAT, localtime(&now));                             \
-            fprintf(stderr, "\x1b[32m %s INFO: \e[0m" format "\n", timestr, ##__VA_ARGS__);  \
-            fflush(stderr);                                                                  \
-        }                                                                                    \
+#define LOGD(format, ...)                                                                   \
+    do {                                                                                    \
+        if (logfile != NULL) {                                                              \
+            time_t now = time(NULL);                                                        \
+            char timestr[20];                                                               \
+            strftime(timestr, 20, TIME_FORMAT, localtime(&now));                            \
+            fprintf(logfile, " %s INFO: " format "\n", timestr, ##__VA_ARGS__);             \
+            fflush(logfile);                                                                \
+        }                                                                                   \
+        else {                                                                              \
+            time_t now = time(NULL);                                                        \
+            char timestr[20];                                                               \
+            strftime(timestr, 20, TIME_FORMAT, localtime(&now));                            \
+            fprintf(stderr, "\x1b[32m %s INFO: \e[0m" format "\n", timestr, ##__VA_ARGS__); \
+            fflush(stderr);                                                                 \
+        }                                                                                   \
     } while (0)
 #endif
+
+// TODO: improve LOG system
 
 #define FATAL(format, ...)                                                                    \
     do {                                                                                      \
