@@ -17,7 +17,6 @@ extern FILE* logfile;
 #define unlikely(x) (x)
 #endif
 
-#define NODEBUGSHOW
 #define TIME_FORMAT "%Y-%m-%d %H:%M:%S"
 #define COLORDEF_GREEM \e[01;32m
 #define COLORDEF_WHITE \e[0m
@@ -98,7 +97,10 @@ extern FILE* logfile;
 #endif
 #endif
 
-#define _LOGD(format, ...)                                                                   \
+#ifdef NODEBUGSHOW
+#define LOGD(format, ...)
+#else
+#define LOGD(format, ...)                                                                    \
     do {                                                                                     \
         if (logfile != NULL) {                                                               \
             time_t now = time(NULL);                                                         \
@@ -115,8 +117,7 @@ extern FILE* logfile;
             fflush(stderr);                                                                  \
         }                                                                                    \
     } while (0)
-
-#define LOGD(format, ...)
+#endif
 
 #define FATAL(format, ...)                                                                    \
     do {                                                                                      \
