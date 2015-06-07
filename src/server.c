@@ -52,7 +52,7 @@ static void server_after_close_cb(uv_handle_t* handle)
     server_ctx_t* server_ctx = (server_ctx_t*)handle->data;
     delete_c_map(server_ctx->idfd_map);
     free(server_ctx);
-    fprintf(stderr, "server_ctx freed\n");
+    LOGW("server_ctx is closed! Wait clients to establish new long connection...");
 }
 
 static void server_exception(server_ctx_t* server_ctx)
@@ -134,17 +134,6 @@ static void remote_after_close_cb(uv_handle_t* handle)
     }
 }
 
-static void remote_after_shutdown_cb(uv_shutdown_t* req, int status)
-{
-    if (status) {
-        LOGD("error remote_after_shutdown_cb status %d", status);
-    }
-    remote_ctx_t* remote_ctx = (remote_ctx_t*)req->data;
-    LOGW("remote_after_shutdown_cb remote_ctx = %x session_id = %d\n", remote_ctx, remote_ctx->session_id);
-    uv_close((uv_handle_t*)&remote_ctx->handle, remote_after_close_cb);
-    free(req);
-}
-
 // Notice: watch out each callback function, inappropriate free() leads to disaster
 static void remote_alloc_cb(uv_handle_t* handle, size_t size, uv_buf_t* buf)
 {
@@ -163,11 +152,7 @@ static void remote_read_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* b
         if (nread == 0)
             return;
         remote_ctx->connected = 0;
-        if (!uv_is_closing((uv_handle_t*)&remote_ctx->handle)) {
-            // the remote is closing, we tell js-local to stop sending and preparing close
-            uv_read_stop((uv_stream_t*)&remote_ctx->handle);
-            uv_close((uv_handle_t*)&remote_ctx->handle, remote_after_close_cb);
-        }
+        HANDLECLOSE(&remote_ctx->handle, remote_after_close_cb);
     }
     else {
         server_ctx_t* server_ctx = remote_ctx->server_ctx;
@@ -303,10 +288,10 @@ static int try_to_connect_remote(remote_ctx_t* remote_ctx)
 static void remote_addr_resolved_cb(uv_getaddrinfo_t* resolver, int status, struct addrinfo* res)
 {
     remote_ctx_t* remote_ctx = (remote_ctx_t*)resolver->data;
-    if (status) {
+    if (status < 0) {
         LOGD("error DNS resolve ");
         remote_ctx->resolved = 0;
-        freeaddrinfo(res);
+        free(resolver);
         HANDLECLOSE(&remote_ctx->handle, remote_after_close_cb);
         return;
     }
