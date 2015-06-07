@@ -120,10 +120,16 @@ static void remote_after_close_cb(uv_handle_t* handle)
                 send_EOF_packet(remote_ctx, CTL_CLOSE);
         }
         packet_t* packet_to_free = NULL;
+        fprintf(stderr, "start free packets in list\n");
         while ((packet_to_free = list_get_head_elem(&remote_ctx->send_queue))) {
+            fprintf(stderr, "a packet in queue is freeing\n");
             list_remove_elem(packet_to_free);
+            fprintf(stderr, "packet->len = %d packet->data = %s\n", packet_to_free->payloadlen, packet_to_free->data);
+            free(packet_to_free->data);
             free(packet_to_free);
         }
+        fprintf(stderr, "end free packets in list\n");
+
         free(remote_ctx);
     }
 }
@@ -519,13 +525,13 @@ static void server_read_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* b
                     memcpy(pkt_to_send, &ctx->packet, sizeof(packet_t));
                     pkt_to_send->data = malloc(ctx->packet.payloadlen);
                     get_payload(pkt_to_send->data, ctx->packet_buf, ctx->packet.payloadlen, ctx->packet.offset);
-                    //LOGD("(request)packet.data =\n%s", pkt_to_send->data);
+
                     remote_ctx->host[remote_ctx->addrlen] = '\0'; // put a EOF on domain name
                     remote_ctx->session_id = ctx->packet.session_id;
                     LOGW("server_read_cb remote_ctx = %x create session id = %d", remote_ctx, remote_ctx->session_id);
                     insert_c_map(ctx->idfd_map, &remote_ctx->session_id, sizeof(int), remote_ctx, sizeof(int));
                     list_add_to_tail(&remote_ctx->send_queue, pkt_to_send);
-                    //SHOWPKTDEBUGWODATA(remote_ctx);
+
                     if (ctx->packet.atyp == 0x03) {
                         uv_getaddrinfo_t* resolver = malloc(sizeof(uv_getaddrinfo_t));
                         // have to resolve domain name first
@@ -620,7 +626,9 @@ int main(int argc, char** argv)
     }
 #endif
 
-    loop = uv_default_loop();
+    loop = malloc(sizeof *loop);
+    uv_loop_init(loop);
+
     char* serverlog = "/tmp/server.log";
     if (log_to_file)
         USE_LOGFILE(serverlog);
@@ -640,7 +648,8 @@ int main(int argc, char** argv)
     //setup_signal_handler(loop);
     uv_run(loop, UV_RUN_DEFAULT);
     uv_close((uv_handle_t*)&listener->handle, NULL);
-    uv_loop_delete(loop);
     free(listener);
+    uv_stop(loop);
+    free(loop);
     CLOSE_LOGFILE;
 }

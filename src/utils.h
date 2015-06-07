@@ -177,8 +177,8 @@ extern FILE* logfile;
     do {                                                     \
         if (r) {                                             \
             if (wr) {                                        \
-                free(wr);                                    \
                 free((wr)->buf.base);                        \
+                free(wr);                                    \
             }                                                \
             if (!uv_is_closing((uv_handle_t*)handle_addr)) { \
                 uv_read_stop((uv_stream_t*)handle_addr);     \

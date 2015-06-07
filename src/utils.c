@@ -77,6 +77,7 @@ void signal_handler(uv_signal_t* handle, int signum)
     uv_loop_t* loop = handle->data;
     uv_signal_stop(handle);
     uv_stop(loop);
+    free(loop);
     exit(0);
 }
 
