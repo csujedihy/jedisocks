@@ -331,8 +331,7 @@ static void remote_addr_resolved_cb(uv_getaddrinfo_t* resolver, int status, stru
     else {
         LOGD("DNS ai_family unrecognized");
     }
-    LOGD("ip when resovled: %d.%d.%d.%d \n", (unsigned char)ctx->host[0], (unsigned char)ctx->host[1], (unsigned char)ctx->host[2], (unsigned char)ctx->host[3]);
-    LOGW("remote_addr_resolved_cb remote_ctx = %x session_id = %d", remote_ctx, remote_ctx->session_id);
+
     int r = try_to_connect_remote(remote_ctx);
     if (r)
         HANDLECLOSE(&remote_ctx->handle, remote_after_close_cb);
