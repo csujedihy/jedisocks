@@ -69,14 +69,14 @@ utils.h
 /Users/jedihy/Documents/Project/jedisocks/src/utils.h
 server.h
 /Users/jedihy/Documents/Project/jedisocks/src/server.h
-c_map.h
-/Users/jedihy/Documents/Project/jedisocks/src/c_map.h
 jconf.h
 /Users/jedihy/Documents/Project/jedisocks/src/jconf.h
 
 /Users/jedihy/Documents/Project/jedisocks/src/server.h
-c_map.h
-/Users/jedihy/Documents/Project/jedisocks/src/c_map.h
+tree.h
+/Users/jedihy/Documents/Project/jedisocks/src/tree.h
+
+/Users/jedihy/Documents/Project/jedisocks/src/tree.h
 
 /Users/jedihy/Documents/Project/jedisocks/src/utils.c
 stdio.h

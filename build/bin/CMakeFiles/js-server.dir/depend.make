@@ -11,10 +11,10 @@ bin/CMakeFiles/js-server.dir/jconf.c.o: ../src/utils.h
 
 bin/CMakeFiles/js-server.dir/js0n.c.o: ../src/js0n.c
 
-bin/CMakeFiles/js-server.dir/server.c.o: ../src/c_map.h
 bin/CMakeFiles/js-server.dir/server.c.o: ../src/jconf.h
 bin/CMakeFiles/js-server.dir/server.c.o: ../src/server.c
 bin/CMakeFiles/js-server.dir/server.c.o: ../src/server.h
+bin/CMakeFiles/js-server.dir/server.c.o: ../src/tree.h
 bin/CMakeFiles/js-server.dir/server.c.o: ../src/utils.h
 
 bin/CMakeFiles/js-server.dir/utils.c.o: ../src/utils.c

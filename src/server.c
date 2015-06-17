@@ -8,7 +8,6 @@
 #include <signal.h>
 #include "utils.h"
 #include "server.h"
-#include "c_map.h"
 #include "jconf.h"
 
 uv_loop_t* loop = NULL;
@@ -16,6 +15,7 @@ FILE* logfile = NULL;
 int verbose = 0;
 int log_to_file = 1;
 conf_t conf;
+remote_ctx_t find_ctx;
 
 // callback functions
 static void remote_alloc_cb(uv_handle_t* handle, size_t size, uv_buf_t* buf);
@@ -35,6 +35,17 @@ static int try_to_connect_remote(remote_ctx_t* remote_ctx);
 static void send_EOF_packet(remote_ctx_t* remote_ctx, int cmd);
 static void server_exception(server_ctx_t* server_ctx);
 
+static inline int
+session_cmp(const remote_ctx_t* tree_a, const remote_ctx_t* tree_b)
+{
+    if (tree_a->session_id == tree_b->session_id)
+        return 0;
+    return tree_a->session_id < tree_b->session_id ? -1 : 1;
+}
+
+RB_PROTOTYPE(remote_map_tree, remote_ctx, rb_link, session_cmp);
+RB_GENERATE(remote_map_tree, remote_ctx, rb_link, session_cmp);
+
 static void remote_timeout_cb(uv_timer_t* handle)
 {
     LOGW("remote timeout, ready to close remote connection");
@@ -50,28 +61,19 @@ static void remote_timeout_cb(uv_timer_t* handle)
 static void server_after_close_cb(uv_handle_t* handle)
 {
     server_ctx_t* server_ctx = (server_ctx_t*)handle->data;
-    delete_c_map(server_ctx->idfd_map);
     free(server_ctx);
     LOGW("server_ctx is closed! Wait clients to establish new long connection...");
 }
 
 static void server_exception(server_ctx_t* server_ctx)
 {
-    if (server_ctx == NULL)
-        assert(0);
     LOGW("Freeing remote long connection...");
     uv_read_stop((uv_stream_t*)&server_ctx->handle);
     if (!uv_is_closing((uv_handle_t*)&server_ctx->handle)) {
-        struct clib_iterator* remote_map_itr = NULL;
-        struct clib_object* elem = NULL;
-        remote_ctx_t* remote_ctx = NULL;
 
-        /* traverse the whole map to stop remote connections reading bufs */
-        remote_map_itr = new_iterator_c_map(server_ctx->idfd_map);
-        elem = remote_map_itr->get_next(remote_map_itr);
-        while (elem) {
-            remote_ctx = (remote_ctx_t*)remote_map_itr->get_value(elem);
-            elem = remote_map_itr->get_next(remote_map_itr);
+        remote_ctx_t* remote_ctx = NULL;
+        RB_FOREACH(remote_ctx, remote_map_tree, &server_ctx->remote_map)
+        {
             if (remote_ctx != NULL) {
                 uv_read_stop((uv_stream_t*)&remote_ctx->handle);
                 remote_ctx->server_ctx = NULL;
@@ -81,7 +83,7 @@ static void server_exception(server_ctx_t* server_ctx)
                 }
             }
         }
-        delete_iterator_c_map(remote_map_itr);
+
         uv_close((uv_handle_t*)&server_ctx->handle, server_after_close_cb);
     }
 }
@@ -94,7 +96,6 @@ static void send_EOF_packet(remote_ctx_t* ctx, int cmd)
     uint16_t datalen = 0;
     uint8_t rsv = cmd;
     LOGW("send_EOF_packet session id = %d", ctx->session_id);
-    LOGD("the session id of the closing session is %d", ctx->session_id);
 
     set_header(pkt_buf, &session_id, ID_LEN, offset);
     set_header(pkt_buf, &rsv, RSV_LEN, offset);
@@ -102,7 +103,7 @@ static void send_EOF_packet(remote_ctx_t* ctx, int cmd)
 
     write_req_t* wr = (write_req_t*)malloc(sizeof(write_req_t));
     wr->req.data = ctx->server_ctx;
-    wr->buf = uv_buf_init(pkt_buf, EXP_TO_RECV_LEN);
+    wr->buf = uv_buf_init(pkt_buf, HDRLEN);
     uv_write(&wr->req, (uv_stream_t*)&ctx->server_ctx->handle, &wr->buf, 1, server_write_cb);
 }
 
@@ -113,13 +114,13 @@ static void remote_after_close_cb(uv_handle_t* handle)
     if (remote_ctx != NULL) {
         uv_timer_stop(&remote_ctx->http_timeout);
         if ((remote_ctx->server_ctx != NULL)) {
-            remove_c_map(remote_ctx->server_ctx->idfd_map, &remote_ctx->session_id, NULL);
+            RB_REMOVE(remote_map_tree, &remote_ctx->server_ctx->remote_map, remote_ctx);
             if (CTL_CLOSE == remote_ctx->ctl_cmd)
                 send_EOF_packet(remote_ctx, CTL_CLOSE_ACK);
             else if (CTL_NORMAL == remote_ctx->ctl_cmd)
                 send_EOF_packet(remote_ctx, CTL_CLOSE);
         }
-        packet_t* packet_to_free = NULL;
+        pending_packet_t* packet_to_free = NULL;
         fprintf(stderr, "start free packets in list\n");
         while ((packet_to_free = list_get_head_elem(&remote_ctx->send_queue))) {
             fprintf(stderr, "a packet in queue is freeing\n");
@@ -184,9 +185,11 @@ static void server_write_cb(uv_write_t* req, int status)
     write_req_t* wr = (write_req_t*)req;
     server_ctx_t* server_ctx = (server_ctx_t*)req->data;
     if (status) {
-        if (!uv_is_closing((uv_handle_t*)&server_ctx->handle)) {
-            LOGW("async write, maybe long remote connection is broken %d", status);
-            server_exception(server_ctx);
+        if (status != UV_ECANCELED) {
+            if (!uv_is_closing((uv_handle_t*)&server_ctx->handle)) {
+                LOGW("async write, maybe long remote connection is broken %d", status);
+                server_exception(server_ctx);
+            }
         }
         // allow below lines to be executed to free bufs
     }
@@ -204,8 +207,8 @@ static void remote_write_cb(uv_write_t* req, int status)
     remote_ctx_t* remote_ctx = (remote_ctx_t*)req->data;
     if (status) {
         LOGW("remote_write_cb error session id = %d", remote_ctx->session_id);
-        remote_ctx->connected = 0;
         if (status != UV_ECANCELED) {
+            remote_ctx->connected = 0;
             HANDLECLOSE(&remote_ctx->handle, remote_after_close_cb);
         }
 
@@ -216,10 +219,9 @@ static void remote_write_cb(uv_write_t* req, int status)
     }
 
     assert(wr->req.type == UV_WRITE);
-    //LOGD("send in remote_write_cb data = \n%s\n", wr->buf.base);
     LOGW("uv_timer_again remote_ctx = %x", remote_ctx);
     uv_timer_again(&remote_ctx->http_timeout);
-    packet_t* packet = list_get_head_elem(&remote_ctx->send_queue);
+    pending_packet_t* packet = list_get_head_elem(&remote_ctx->send_queue);
     if (packet) {
         write_req_t* wr = (write_req_t*)malloc(sizeof(write_req_t));
         wr->req.data = remote_ctx;
@@ -243,19 +245,20 @@ static void remote_on_connect_cb(uv_connect_t* req, int status)
 {
     remote_ctx_t* remote_ctx = (remote_ctx_t*)req->data;
     if (status) {
-        LOGD("error in remote_on_connect");
-        HANDLECLOSE(&remote_ctx->handle, remote_after_close_cb);
+        if (status != UV_ECANCELED) {
+            LOGD("error in remote_on_connect");
+            HANDLECLOSE(&remote_ctx->handle, remote_after_close_cb);
+        }
         free(req);
         return;
     }
-    if (verbose)
-        LOGD("domain resovled");
+
     remote_ctx->connected = 1;
     uv_read_start((uv_stream_t*)&remote_ctx->handle, remote_alloc_cb, remote_read_cb);
 
-    packet_t* packet = list_get_head_elem(&remote_ctx->send_queue);
+    pending_packet_t* packet = list_get_head_elem(&remote_ctx->send_queue);
     if (packet) {
-        LOGD("sent something in remote_on_connect");
+        LOGD("sent something in remote_on_connect_cb");
         write_req_t* wr = (write_req_t*)malloc(sizeof(write_req_t));
         wr->req.data = remote_ctx;
         wr->buf = uv_buf_init(packet->data, packet->payloadlen);
@@ -265,8 +268,7 @@ static void remote_on_connect_cb(uv_connect_t* req, int status)
         free(packet);
     }
     else {
-        if (verbose)
-            LOGD("got nothing to send");
+        LOGD("got nothing to send in remote_on_connect_cb");
     }
     free(req);
 }
@@ -290,9 +292,12 @@ static void remote_addr_resolved_cb(uv_getaddrinfo_t* resolver, int status, stru
     remote_ctx_t* remote_ctx = (remote_ctx_t*)resolver->data;
     if (status < 0) {
         LOGD("error DNS resolve ");
-        remote_ctx->resolved = 0;
+        if (status != UV_ECANCELED) {
+            remote_ctx->resolved = 0;
+            HANDLECLOSE(&remote_ctx->handle, remote_after_close_cb);
+        }
+
         free(resolver);
-        HANDLECLOSE(&remote_ctx->handle, remote_after_close_cb);
         return;
     }
 
@@ -331,6 +336,7 @@ static void server_accept_cb(uv_stream_t* server, int status)
     server_ctx_t* ctx = calloc(1, sizeof(server_ctx_t));
     ctx->handle.data = ctx;
     ctx->expect_to_recv = HDRLEN;
+    RB_INIT(&ctx->remote_map);
     uv_tcp_init(loop, &ctx->handle);
     uv_tcp_nodelay(&ctx->handle, 1);
 
@@ -340,8 +346,6 @@ static void server_accept_cb(uv_stream_t* server, int status)
         uv_close((uv_handle_t*)&ctx->handle, NULL);
     }
     else {
-        struct clib_map* map = new_c_map(compare_id, NULL, NULL);
-        ctx->idfd_map = map;
         uv_read_start((uv_stream_t*)&ctx->handle, server_alloc_cb, server_read_cb);
     }
 }
@@ -385,6 +389,8 @@ static void server_read_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* b
 
         if (ctx->stage == 0) {
             if (ctx->buf_len >= EXP_TO_RECV_LEN) {
+                if (ctx->buf_len > EXP_TO_RECV_LEN)
+                    assert(0);
                 LOGD("stage = 0");
                 LOGD("3: buf_len = %d, reset = %d, stage = %d, expect_to_recv %d", ctx->buf_len, ctx->reset, ctx->stage, ctx->expect_to_recv);
                 get_id(ctx, &ctx->packet.session_id, ctx->packet_buf, ID_LEN, ctx->packet.offset);
@@ -395,29 +401,21 @@ static void server_read_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* b
                 ctx->expect_to_recv = ctx->packet.datalen;
                 LOGD("session id = %d RSV = %d", ctx->packet.session_id, ctx->packet.rsv);
                 ctx->stage = 1;
-                // check packet's RSV, see if this packet has control info.
-                // CTL_CLOSE means peer wanted to close this session -> FIN
-                // peer has to make sure no more data issued on this session
                 if (ctx->packet.rsv == CTL_CLOSE) {
                     LOGW("received a packet with CTL_CLOSE (0x04) session id = %d", ctx->packet.session_id);
                     remote_ctx_t* exist_ctx = NULL;
-                    if (find_c_map(ctx->idfd_map, &ctx->packet.session_id, &exist_ctx)) {
-                        if (exist_ctx != NULL) {
-                            // stop watching read I/O
-                            // elegantly close
-                            // closing == 4, peer closing in charge, just close remote
-                            exist_ctx->ctl_cmd = CTL_CLOSE;
-                            LOGW("exist session close remote_ctx = %x\n", exist_ctx);
-                            uv_read_stop((uv_stream_t*)&exist_ctx->handle);
-                            if (!uv_is_closing((uv_handle_t*)&exist_ctx->handle)) {
-                                if (exist_ctx->resolved == 1)
-                                    uv_close((uv_handle_t*)&exist_ctx->handle, remote_after_close_cb);
-                                else
-                                    exist_ctx->closing = 1;
-                            }
+                    find_ctx.session_id = ctx->packet.session_id;
+                    exist_ctx = RB_FIND(remote_map_tree, &ctx->remote_map, &find_ctx);
+                    if (exist_ctx != NULL) {
+                        exist_ctx->ctl_cmd = CTL_CLOSE;
+                        LOGW("exist session close remote_ctx = %x", exist_ctx);
+                        uv_read_stop((uv_stream_t*)&exist_ctx->handle);
+                        if (!uv_is_closing((uv_handle_t*)&exist_ctx->handle)) {
+                            if (exist_ctx->resolved == 1)
+                                uv_close((uv_handle_t*)&exist_ctx->handle, remote_after_close_cb);
+                            else
+                                exist_ctx->closing = 1;
                         }
-                        else
-                            LOGW("found a NULL remote_ctx to free");
                     }
                     else {
                         LOGW("warning: closing an non-existent remote_ctx which means this session id is safe to be reused in local-side");
@@ -433,8 +431,7 @@ static void server_read_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* b
                 LOGD("4: buf_len = %d, reset = %d, stage = %d, expect_to_recv %d", ctx->buf_len, ctx->reset, ctx->stage, ctx->expect_to_recv);
             }
             else {
-                if (verbose)
-                    LOGD("< header length ... gather more");
+                LOGD("< header length ... gather more");
                 ctx->expect_to_recv = EXP_TO_RECV_LEN - ctx->buf_len;
                 LOGD("ctx->expect_to_recv %d", ctx->expect_to_recv);
                 return;
@@ -446,24 +443,24 @@ static void server_read_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* b
                 ctx->reset = 0;
                 ctx->expect_to_recv = EXP_TO_RECV_LEN;
                 remote_ctx_t* exist_ctx = NULL;
-                if (find_c_map(ctx->idfd_map, &ctx->packet.session_id, &exist_ctx)) {
-                    if (exist_ctx == NULL)
-                        LOGD("exist_ctx == NULL");
+                find_ctx.session_id = ctx->packet.session_id;
+                exist_ctx = RB_FIND(remote_map_tree, &ctx->remote_map, &find_ctx);
+                if (exist_ctx != NULL) {
                     LOGD("server_read_cb: exist_ctx in session_id = %d, RSV = %d datalen = %d\n", ctx->packet.session_id, ctx->packet.rsv, ctx->packet.datalen);
                     if (ctx->packet.rsv == CTL_INIT)
                         assert(0);
                     ctx->packet.payloadlen = ctx->packet.datalen;
-                    packet_t* pkt_to_send = malloc(sizeof(packet_t));
-                    memcpy(pkt_to_send, &ctx->packet, sizeof(packet_t));
+                    pending_packet_t* pkt_to_send = malloc(sizeof(pending_packet_t));
+                    pkt_to_send->payloadlen = ctx->packet.payloadlen;
                     pkt_to_send->data = malloc(ctx->packet.payloadlen);
                     get_header(pkt_to_send->data, ctx->packet_buf, ctx->packet.payloadlen, ctx->packet.offset);
-                    LOGD("server_read_cb: (request)packet.data = \n%s\n", pkt_to_send->data);
+                    LOGD("server_read_cb: (request) packet.payloadlen = %d packet.data = \n%s\n", pkt_to_send->payloadlen, pkt_to_send->data);
                     //LOG_SHOW_BUFFER(pkt_to_send->data, pkt_to_send->payloadlen);
                     list_add_to_tail(&exist_ctx->send_queue, pkt_to_send);
                     LOGD("server_read_cb: ip: %d.%d.%d.%d", (unsigned char)exist_ctx->host[0], (unsigned char)exist_ctx->host[1], (unsigned char)exist_ctx->host[2], (unsigned char)exist_ctx->host[3]);
                     LOGD("server_read_cb: resovled = %d connected = %d", exist_ctx->resolved, exist_ctx->connected);
                     if (exist_ctx->resolved == 1 && exist_ctx->connected == 1) {
-                        packet_t* packet = list_get_head_elem(&exist_ctx->send_queue);
+                        pending_packet_t* packet = list_get_head_elem(&exist_ctx->send_queue);
                         if (packet) {
                             write_req_t* wr = (write_req_t*)malloc(sizeof(write_req_t));
                             wr->req.data = exist_ctx;
@@ -486,6 +483,7 @@ static void server_read_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* b
                 else {
                     if (ctx->packet.rsv == CTL_NORMAL) {
                         LOGW("Received packet from freed session");
+                        ctx->reset = 0;
                         return;
                     }
                     remote_ctx_t* remote_ctx = calloc(1, sizeof(remote_ctx_t));
@@ -503,19 +501,23 @@ static void server_read_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* b
                     remote_ctx->addrlen = ctx->packet.addrlen;
                     get_header(remote_ctx->host, ctx->packet_buf, ctx->packet.addrlen, ctx->packet.offset);
                     get_header(remote_ctx->port, ctx->packet_buf, PORT_LEN, ctx->packet.offset);
-                    //                  packet_payload_alloc(ctx->packet, FULLPKT);
                     ctx->packet.payloadlen = ctx->packet.datalen - (ATYP_LEN + ADDRLEN_LEN + ctx->packet.addrlen + PORT_LEN);
-                    packet_t* pkt_to_send = malloc(sizeof(packet_t));
-                    memcpy(pkt_to_send, &ctx->packet, sizeof(packet_t));
-                    pkt_to_send->data = malloc(ctx->packet.payloadlen);
+                    pending_packet_t* pkt_to_send = malloc(sizeof(pending_packet_t));
+                    pkt_to_send->payloadlen = ctx->packet.payloadlen;
+                    pkt_to_send->data = malloc(pkt_to_send->payloadlen);
                     get_payload(pkt_to_send->data, ctx->packet_buf, ctx->packet.payloadlen, ctx->packet.offset);
 
                     remote_ctx->host[remote_ctx->addrlen] = '\0'; // put a EOF on domain name
                     remote_ctx->session_id = ctx->packet.session_id;
-                    LOGW("server_read_cb remote_ctx = %x create session id = %d", remote_ctx, remote_ctx->session_id);
-                    insert_c_map(ctx->idfd_map, &remote_ctx->session_id, sizeof(int), remote_ctx, sizeof(int));
-                    list_add_to_tail(&remote_ctx->send_queue, pkt_to_send);
+                    LOGW("server_read_cb remote_ctx = %x create session id = %d rsv = %d payloadlen = %d addrlen = %d", remote_ctx, remote_ctx->session_id, ctx->packet.rsv, ctx->packet.payloadlen, ctx->packet.addrlen);
+                    remote_ctx_t* ins_r = RB_INSERT(remote_map_tree, &ctx->remote_map, remote_ctx);
+                    if (ins_r) {
+                        LOGE("RB_INSERT error!");
+                        assert(0);
+                    }
 
+                    list_add_to_tail(&remote_ctx->send_queue, pkt_to_send);
+                    
                     if (ctx->packet.atyp == 0x03) {
                         uv_getaddrinfo_t* resolver = malloc(sizeof(uv_getaddrinfo_t));
                         // have to resolve domain name first
@@ -531,6 +533,7 @@ static void server_read_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* b
                     else if (ctx->packet.atyp == 0x04) {
                         // TODO: ipv6 temporarily unsupported
                     }
+
                     LOGW("server_read_cb:1 remote_ctx = %x session_id = %d type = %d", remote_ctx, remote_ctx->session_id, remote_ctx->handle.type);
                 }
             }
@@ -542,15 +545,15 @@ static void server_read_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* b
             }
             else {
                 assert(0);
-                LOGD("impossible! should never reach here (> datalen)\n");
+                LOGD("impossible! should never reach here (> datalen)");
             }
         }
         else {
-            LOGD("strange stage %d\n", ctx->stage);
+            LOGD("strange stage %d", ctx->stage);
             assert(0);
         }
     }
-    LOGD("server_read_cb: ==============================end==============================\n");
+    LOGD("server_read_cb: ==============================end==============================");
 }
 
 int main(int argc, char** argv)

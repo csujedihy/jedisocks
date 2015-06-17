@@ -1,6 +1,6 @@
 #ifndef SERVER_H_
 #define SERVER_H_
-#include "c_map.h"
+#include "tree.h"
 
 #define BUF_SIZE 2048
 #define MAX_PKT_SIZE 8192
@@ -28,6 +28,7 @@
         packet.data = calloc(1, packet.payloadlen);                                                  \
     } while (0)
 
+//FIXME: memset the whole packet structure is unneccessary! just reset offset
 #define packetnbuf_reset(ctx)                      \
     do {                                           \
         ctx->buf_len = 0;                          \
@@ -66,8 +67,15 @@ typedef struct packet {
     struct packet* next;
 } packet_t;
 
+typedef struct pending_packet {
+    char* data;
+    uint16_t payloadlen;
+    struct pending_packet* prev;
+    struct pending_packet* next;
+} pending_packet_t;
+
 typedef struct send_queue {
-    packet_t head;
+    pending_packet_t head;
 } queue_t;
 
 typedef struct {
@@ -79,9 +87,11 @@ typedef struct listener {
     TCP_HANDLE_BASIC
 } listener_t;
 
+RB_HEAD(remote_map_tree, remote_ctx);
+
 typedef struct {
     TCP_HANDLE_BASIC
-    struct clib_map* idfd_map; // for mapping session id with remote fd
+    struct remote_map_tree remote_map;
     packet_t packet;
     queue_t send_queue;
     char packet_buf[MAX_PKT_SIZE];
@@ -92,13 +102,13 @@ typedef struct {
     int expect_to_recv;
 } server_ctx_t;
 
-typedef struct {
+typedef struct remote_ctx {
     TCP_HANDLE_BASIC
+    RB_ENTRY(remote_ctx) rb_link;
     int session_id;
     server_ctx_t* server_ctx;
     char host[257];
     char port[2];
-    packet_t* packet;
     queue_t send_queue;
     int resolved;
     int connected;
@@ -108,5 +118,6 @@ typedef struct {
     int ctl_cmd;
     uv_timer_t http_timeout;
 } remote_ctx_t;
+
 
 #endif
