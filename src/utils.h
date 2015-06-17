@@ -256,6 +256,22 @@ extern FILE* logfile;
         (ctx)->packet.session_id = ntohl((uint32_t)ctx->packet.session_id); \
     } while (0)
 
+#define ALLOCATE_PACKET(type, len)                          \
+    ({                                                      \
+        struct type* tmp_ptr = malloc(sizeof(struct type)); \
+        tmp_ptr->payloadlen = len;                          \
+        tmp_ptr->data = malloc(len);                        \
+        tmp_ptr;                                            \
+    })
+
+#define ALLOCATE_W_REQ(ref, buf_base, buf_len)              \
+    ({                                                      \
+        write_req_t* tmp_ptr = malloc(sizeof(write_req_t)); \
+        tmp_ptr->req.data = ref;                            \
+        tmp_ptr->buf = uv_buf_init(buf_base, buf_len);      \
+        tmp_ptr;                                            \
+    })
+
 // built-in link list MACROs, originated from libcork
 #define list_init(list)                    \
     do {                                   \

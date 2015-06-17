@@ -107,9 +107,7 @@ static void send_control_packet(const uint32_t session_id, server_ctx_t* server_
     set_header(pkt_buf, &rsv, RSV_LEN, offset);
     set_header(pkt_buf, &datalen, DATALEN_LEN, offset);
 
-    write_req_t* wr = (write_req_t*)malloc(sizeof(write_req_t));
-    wr->req.data = server_ctx;
-    wr->buf = uv_buf_init(pkt_buf, HDRLEN);
+    write_req_t* wr = ALLOCATE_W_REQ(server_ctx, pkt_buf, HDRLEN);
     uv_write(&wr->req, (uv_stream_t*)&server_ctx->handle, &wr->buf, 1, server_write_cb);
 }
 
@@ -130,15 +128,11 @@ static void remote_after_close_cb(uv_handle_t* handle)
                 send_control_packet(remote_ctx->session_id, remote_ctx->server_ctx, CTL_CLOSE);
         }
         pending_packet_t* packet_to_free = NULL;
-        fprintf(stderr, "start free packets in list\n");
         while ((packet_to_free = list_get_head_elem(&remote_ctx->send_queue))) {
-            fprintf(stderr, "a packet in queue is freeing\n");
             list_remove_elem(packet_to_free);
-            fprintf(stderr, "packet->len = %d packet->data = %s\n", packet_to_free->payloadlen, packet_to_free->data);
             free(packet_to_free->data);
             free(packet_to_free);
         }
-        fprintf(stderr, "end free packets in list\n");
 
         free(remote_ctx);
     }
@@ -172,17 +166,16 @@ static void remote_read_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* b
         }
 
         int offset = 0;
-        char* pkt_buf = calloc(1, ID_LEN + RSV_LEN + DATALEN_LEN + nread);
+        int packet_len = ID_LEN + RSV_LEN + DATALEN_LEN + nread;
+        char* pkt_buf = malloc(packet_len);
         uint32_t session_id = htonl((uint32_t)remote_ctx->session_id);
         uint16_t datalen = htons((uint16_t)nread);
-        set_header(pkt_buf, &session_id, ID_LEN, offset);
         uint8_t rsv = CTL_NORMAL;
+        set_header(pkt_buf, &session_id, ID_LEN, offset);
         set_header(pkt_buf, &rsv, RSV_LEN, offset);
         set_header(pkt_buf, &datalen, DATALEN_LEN, offset);
         set_payload(pkt_buf, buf->base, nread, offset);
-        write_req_t* req = calloc(1, sizeof(write_req_t));
-        req->req.data = server_ctx;
-        req->buf = uv_buf_init(pkt_buf, ID_LEN + RSV_LEN + DATALEN_LEN + nread);
+        write_req_t* req = ALLOCATE_W_REQ(server_ctx, pkt_buf, packet_len);
         uv_write(&req->req, (uv_stream_t*)&remote_ctx->server_ctx->handle, &req->buf, 1, server_write_cb);
         LOGW("remote_read_cb remote_ctx = %x session_id = %d type = %d", remote_ctx, remote_ctx->session_id, remote_ctx->handle.type);
         free(buf->base);
@@ -232,9 +225,7 @@ static void remote_write_cb(uv_write_t* req, int status)
     uv_timer_again(remote_ctx->http_timeout);
     pending_packet_t* packet = list_get_head_elem(&remote_ctx->send_queue);
     if (packet) {
-        write_req_t* wr = (write_req_t*)malloc(sizeof(write_req_t));
-        wr->req.data = remote_ctx;
-        wr->buf = uv_buf_init(packet->data, packet->payloadlen);
+        write_req_t* wr = ALLOCATE_W_REQ(remote_ctx, packet->data, packet->payloadlen);
         int r = uv_write(&wr->req, (uv_stream_t*)&remote_ctx->handle, &wr->buf, 1, remote_write_cb);
         UV_WRITE_CHECK(r, wr, &remote_ctx->handle, remote_after_close_cb);
         list_remove_elem(packet);
@@ -268,9 +259,7 @@ static void remote_on_connect_cb(uv_connect_t* req, int status)
 
     pending_packet_t* packet = list_get_head_elem(&remote_ctx->send_queue);
     if (packet) {
-        write_req_t* wr = (write_req_t*)malloc(sizeof(write_req_t));
-        wr->req.data = remote_ctx;
-        wr->buf = uv_buf_init(packet->data, packet->payloadlen);
+        write_req_t* wr = ALLOCATE_W_REQ(remote_ctx, packet->data, packet->payloadlen);
         int r = uv_write(&wr->req, (uv_stream_t*)&remote_ctx->handle, &wr->buf, 1, remote_write_cb);
         UV_WRITE_CHECK(r, wr, &remote_ctx->handle, remote_after_close_cb);
         list_remove_elem(packet);
@@ -437,16 +426,16 @@ static void server_read_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* b
             }
             else {
                 LOGD("< header length ... gather more");
-                ctx->expect_to_recv = EXP_TO_RECV_LEN - ctx->buf_len;
+                ctx->expect_to_recv = HDRLEN - ctx->buf_len;
                 LOGD("ctx->expect_to_recv %d", ctx->expect_to_recv);
                 return;
             }
         }
         else if (ctx->stage == 1) {
-            if (ctx->buf_len == ctx->packet.datalen + EXP_TO_RECV_LEN) {
+            if (ctx->buf_len == ctx->packet.datalen + HDRLEN) {
                 // after processing this packet, we have to handle the next packet so reset all stuffs
                 ctx->reset = 0;
-                ctx->expect_to_recv = EXP_TO_RECV_LEN;
+                ctx->expect_to_recv = HDRLEN;
                 remote_ctx_t* exist_ctx = NULL;
                 find_ctx.session_id = ctx->packet.session_id;
                 exist_ctx = RB_FIND(remote_map_tree, &ctx->remote_map, &find_ctx);
@@ -456,9 +445,7 @@ static void server_read_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* b
                     if (ctx->packet.rsv == CTL_INIT)
                         assert(0);
                     ctx->packet.payloadlen = ctx->packet.datalen;
-                    pending_packet_t* pkt_to_send = malloc(sizeof(pending_packet_t));
-                    pkt_to_send->payloadlen = ctx->packet.payloadlen;
-                    pkt_to_send->data = malloc(ctx->packet.payloadlen);
+                    pending_packet_t* pkt_to_send = ALLOCATE_PACKET(pending_packet, ctx->packet.payloadlen);
                     get_header(pkt_to_send->data, ctx->packet_buf, ctx->packet.payloadlen, ctx->packet.offset);
                     LOGD("server_read_cb: (request) packet.payloadlen = %d packet.data = \n%s", pkt_to_send->payloadlen, pkt_to_send->data);
                     //LOG_SHOW_BUFFER(pkt_to_send->data, pkt_to_send->payloadlen);
@@ -468,9 +455,7 @@ static void server_read_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* b
                     if (exist_ctx->resolved == 1 && exist_ctx->connected == 1) {
                         pending_packet_t* packet = list_get_head_elem(&exist_ctx->send_queue);
                         if (packet) {
-                            write_req_t* wr = (write_req_t*)malloc(sizeof(write_req_t));
-                            wr->req.data = exist_ctx;
-                            wr->buf = uv_buf_init(packet->data, packet->payloadlen);
+                            write_req_t* wr = ALLOCATE_W_REQ(exist_ctx, packet->data, packet->payloadlen);
                             int r = uv_write(&wr->req, (uv_stream_t*)(void*)&exist_ctx->handle, &wr->buf, 1, remote_write_cb);
                             UV_WRITE_CHECK(r, wr, &exist_ctx->handle, remote_after_close_cb);
                             list_remove_elem(packet);
@@ -509,9 +494,7 @@ static void server_read_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* b
                     get_header(remote_ctx->host, ctx->packet_buf, ctx->packet.addrlen, ctx->packet.offset);
                     get_header(remote_ctx->port, ctx->packet_buf, PORT_LEN, ctx->packet.offset);
                     ctx->packet.payloadlen = ctx->packet.datalen - (ATYP_LEN + ADDRLEN_LEN + ctx->packet.addrlen + PORT_LEN);
-                    pending_packet_t* pkt_to_send = malloc(sizeof(pending_packet_t));
-                    pkt_to_send->payloadlen = ctx->packet.payloadlen;
-                    pkt_to_send->data = malloc(pkt_to_send->payloadlen);
+                    pending_packet_t* pkt_to_send = ALLOCATE_PACKET(pending_packet, ctx->packet.payloadlen);
                     get_payload(pkt_to_send->data, ctx->packet_buf, ctx->packet.payloadlen, ctx->packet.offset);
 
                     remote_ctx->host[remote_ctx->addrlen] = '\0'; // put a EOF on domain name
@@ -544,10 +527,10 @@ static void server_read_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* b
                     LOGW("server_read_cb:1 remote_ctx = %x session_id = %d type = %d", remote_ctx, remote_ctx->session_id, remote_ctx->handle.type);
                 }
             }
-            else if (ctx->buf_len < ctx->packet.datalen + EXP_TO_RECV_LEN) {
+            else if (ctx->buf_len < ctx->packet.datalen + HDRLEN) {
                 if (verbose)
                     LOGD("< datalen gather more");
-                ctx->expect_to_recv = EXP_TO_RECV_LEN + ctx->packet.datalen - ctx->buf_len;
+                ctx->expect_to_recv = HDRLEN + ctx->packet.datalen - ctx->buf_len;
                 return;
             }
             else {
