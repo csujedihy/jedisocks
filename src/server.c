@@ -23,7 +23,6 @@ static void remote_read_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* b
 static void server_alloc_cb(uv_handle_t* handle, size_t size, uv_buf_t* buf);
 static void server_read_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf);
 static void remote_write_cb(uv_write_t* req, int status);
-static void remote_after_shutdown_cb(uv_shutdown_t* req, int status);
 static void remote_after_close_cb(uv_handle_t* handle);
 static void remote_addr_resolved_cb(uv_getaddrinfo_t* resolver, int status, struct addrinfo* res);
 static void remote_on_connect_cb(uv_connect_t* req, int status);
@@ -50,12 +49,19 @@ static void remote_timeout_cb(uv_timer_t* handle)
 {
     LOGW("remote timeout, ready to close remote connection");
     remote_ctx_t* remote_ctx = handle->data;
-    if (!uv_is_closing((uv_handle_t*)&remote_ctx->handle)) {
-        if (remote_ctx->resolved == 1)
-            uv_close((uv_handle_t*)&remote_ctx->handle, remote_after_close_cb);
-        else
-            remote_ctx->closing = 1;
+    if (remote_ctx != NULL) {
+        if (!uv_is_closing((uv_handle_t*)&remote_ctx->handle)) {
+            if (remote_ctx->resolved == 1)
+                uv_close((uv_handle_t*)&remote_ctx->handle, remote_after_close_cb);
+            else
+                remote_ctx->closing = 1;
+        }
     }
+}
+
+static void remote_timer_after_close_cb(uv_handle_t* handle)
+{
+    free(handle);
 }
 
 static void server_after_close_cb(uv_handle_t* handle)
@@ -112,7 +118,10 @@ static void remote_after_close_cb(uv_handle_t* handle)
     remote_ctx_t* remote_ctx = (remote_ctx_t*)handle->data;
     LOGW("remote_close_cb remote_ctx = %x session_id = %d", remote_ctx, remote_ctx->session_id);
     if (remote_ctx != NULL) {
-        uv_timer_stop(&remote_ctx->http_timeout);
+        uv_timer_stop(remote_ctx->http_timeout);
+        remote_ctx->http_timeout->data = NULL;
+        uv_close(remote_ctx->http_timeout, remote_timer_after_close_cb);
+        remote_ctx->http_timeout = NULL;
         if ((remote_ctx->server_ctx != NULL)) {
             RB_REMOVE(remote_map_tree, &remote_ctx->server_ctx->remote_map, remote_ctx);
             if (CTL_CLOSE == remote_ctx->ctl_cmd)
@@ -145,7 +154,6 @@ static void remote_alloc_cb(uv_handle_t* handle, size_t size, uv_buf_t* buf)
 static void remote_read_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf)
 {
     remote_ctx_t* remote_ctx = (remote_ctx_t*)stream->data;
-    //uv_timer_again(&remote_ctx->http_timeout);
     if (unlikely(nread <= 0)) {
         LOGD("remote_read_cb: nread <= 0");
         if (buf->len)
@@ -156,6 +164,7 @@ static void remote_read_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* b
         HANDLECLOSE(&remote_ctx->handle, remote_after_close_cb);
     }
     else {
+        uv_timer_again(remote_ctx->http_timeout);
         server_ctx_t* server_ctx = remote_ctx->server_ctx;
         if (server_ctx == NULL) {
             free(buf->base);
@@ -220,7 +229,7 @@ static void remote_write_cb(uv_write_t* req, int status)
 
     assert(wr->req.type == UV_WRITE);
     LOGW("uv_timer_again remote_ctx = %x", remote_ctx);
-    uv_timer_again(&remote_ctx->http_timeout);
+    uv_timer_again(remote_ctx->http_timeout);
     pending_packet_t* packet = list_get_head_elem(&remote_ctx->send_queue);
     if (packet) {
         write_req_t* wr = (write_req_t*)malloc(sizeof(write_req_t));
@@ -446,6 +455,7 @@ static void server_read_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* b
                 find_ctx.session_id = ctx->packet.session_id;
                 exist_ctx = RB_FIND(remote_map_tree, &ctx->remote_map, &find_ctx);
                 if (exist_ctx != NULL) {
+                    uv_timer_again(exist_ctx->http_timeout);
                     LOGD("server_read_cb: exist_ctx in session_id = %d, RSV = %d datalen = %d\n", ctx->packet.session_id, ctx->packet.rsv, ctx->packet.datalen);
                     if (ctx->packet.rsv == CTL_INIT)
                         assert(0);
@@ -454,7 +464,7 @@ static void server_read_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* b
                     pkt_to_send->payloadlen = ctx->packet.payloadlen;
                     pkt_to_send->data = malloc(ctx->packet.payloadlen);
                     get_header(pkt_to_send->data, ctx->packet_buf, ctx->packet.payloadlen, ctx->packet.offset);
-                    LOGD("server_read_cb: (request) packet.payloadlen = %d packet.data = \n%s\n", pkt_to_send->payloadlen, pkt_to_send->data);
+                    LOGD("server_read_cb: (request) packet.payloadlen = %d packet.data = \n%s", pkt_to_send->payloadlen, pkt_to_send->data);
                     //LOG_SHOW_BUFFER(pkt_to_send->data, pkt_to_send->payloadlen);
                     list_add_to_tail(&exist_ctx->send_queue, pkt_to_send);
                     LOGD("server_read_cb: ip: %d.%d.%d.%d", (unsigned char)exist_ctx->host[0], (unsigned char)exist_ctx->host[1], (unsigned char)exist_ctx->host[2], (unsigned char)exist_ctx->host[3]);
@@ -490,11 +500,12 @@ static void server_read_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* b
                     remote_ctx->ctl_cmd = CTL_NORMAL;
                     remote_ctx->server_ctx = ctx;
                     remote_ctx->handle.data = remote_ctx;
-                    remote_ctx->http_timeout.data = remote_ctx;
+                    remote_ctx->http_timeout = (uv_timer_t*)malloc(sizeof(uv_timer_t));
+                    remote_ctx->http_timeout->data = remote_ctx;
                     uv_tcp_init(loop, &remote_ctx->handle);
-                    uv_timer_init(loop, &remote_ctx->http_timeout);
-                    LOGW("uv_timer_start remote_ctx = %x http_timeout = %x", remote_ctx, &remote_ctx->http_timeout);
-                    uv_timer_start(&remote_ctx->http_timeout, remote_timeout_cb, conf.timeout, conf.timeout);
+                    uv_timer_init(loop, remote_ctx->http_timeout);
+                    LOGW("uv_timer_start remote_ctx = %x http_timeout = %x", remote_ctx, remote_ctx->http_timeout);
+                    uv_timer_start(remote_ctx->http_timeout, remote_timeout_cb, conf.timeout, conf.timeout);
                     list_init(&remote_ctx->send_queue);
                     get_header(&ctx->packet.atyp, ctx->packet_buf, ATYP_LEN, ctx->packet.offset);
                     get_header(&ctx->packet.addrlen, ctx->packet_buf, ADDRLEN_LEN, ctx->packet.offset);
@@ -517,7 +528,7 @@ static void server_read_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* b
                     }
 
                     list_add_to_tail(&remote_ctx->send_queue, pkt_to_send);
-                    
+
                     if (ctx->packet.atyp == 0x03) {
                         uv_getaddrinfo_t* resolver = malloc(sizeof(uv_getaddrinfo_t));
                         // have to resolve domain name first

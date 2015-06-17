@@ -116,7 +116,7 @@ typedef struct remote_ctx {
     int stage;
     int closing;
     int ctl_cmd;
-    uv_timer_t http_timeout;
+    uv_timer_t* http_timeout;
 } remote_ctx_t;
 
 
