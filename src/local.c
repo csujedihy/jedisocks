@@ -301,10 +301,12 @@ static void socks_accept_cb(uv_stream_t* server, int status)
 
     /* set central gateway address */
     if (conf.backend_mode) {
+        struct sockaddr_in remote_addr;
+        uv_ip4_addr(conf.local_address, conf.localport, &remote_addr);
         socks_hsctx->stage = 2;
-        socks_hsctx->atyp = ATYP_DOMAIN;
-        socks_hsctx->addrlen = conf.centralgw_address_len;
-        memcpy(socks_hsctx->host, conf.centralgw_address, socks_hsctx->addrlen);
+        socks_hsctx->atyp = ATYP_IPV4;
+        socks_hsctx->addrlen = 4;
+        memcpy(socks_hsctx->host, &remote_addr.sin_addr.s_addr, socks_hsctx->addrlen);
         uint16_t gateway_port_n = htons(conf.gatewayport);
         memcpy(socks_hsctx->port, &gateway_port_n, sizeof(gateway_port_n));
     }
@@ -319,6 +321,7 @@ static void socks_accept_cb(uv_stream_t* server, int status)
         free(socks_hsctx);
         return;
     }
+    
     if (likely(listener->remote_long[round_robin_index] != NULL)) {
 
         remote_ctx_t* remote_ctx = listener->remote_long[round_robin_index];
@@ -362,16 +365,6 @@ static void socks_accept_cb(uv_stream_t* server, int status)
         }
         LOGW("Insert session id = %d into map", socks_hsctx->session_id);
     }
-
-    // if pool size is adaptively adjusted, ...
-    /*
-    else {
-        listener->remote_long = create_new_long_connection(listener);
-        list_add_to_tail(&listener->remote_long->managed_socks_list, socks_hsctx);
-        try_to_connect_remote(listener->remote_long);
-        socks_hsctx->remote_long = listener->remote_long;
-    }
-    */
 
     if (++round_robin_index == listener->rc_pool_size)
         round_robin_index = 0;

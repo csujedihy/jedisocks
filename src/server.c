@@ -516,6 +516,8 @@ static void server_read_cb(uv_stream_t* stream, ssize_t nread, const uv_buf_t* b
                     }
                     else if (ctx->packet.atyp == 0x01) // do not have to resolve ipv4 address
                     {
+                        // DNS resolve is not in use
+                        remote_ctx->resolved = 1;
                         int r = try_to_connect_remote(remote_ctx);
                         if (r)
                             LOGW("Received packet with atyp 0x01");
