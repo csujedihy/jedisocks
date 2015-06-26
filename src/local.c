@@ -295,6 +295,8 @@ static void socks_accept_cb(uv_stream_t* server, int status)
         LOGW("async connect error %d", status);
         return;
     }
+
+    fprintf(stderr, "a connection accepted\n");
     server_ctx_t* listener = (server_ctx_t*)server->data;
     socks_handshake_t* socks_hsctx = calloc(1, sizeof(socks_handshake_t));
     socks_hsctx->server.data = socks_hsctx;
@@ -321,7 +323,7 @@ static void socks_accept_cb(uv_stream_t* server, int status)
         free(socks_hsctx);
         return;
     }
-    
+
     if (likely(listener->remote_long[round_robin_index] != NULL)) {
 
         remote_ctx_t* remote_ctx = listener->remote_long[round_robin_index];

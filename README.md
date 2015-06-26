@@ -1,13 +1,13 @@
-##Jedisocks [![Build Status](https://travis-ci.org/csujedihy/jedisocks.svg?branch=master)](https://travis-ci.org/csujedihy/jedisocks) 
+## Jedisocks [![Build Status](https://travis-ci.org/csujedihy/jedisocks.svg?branch=master)](https://travis-ci.org/csujedihy/jedisocks) 
 
 
-####Overview
+#### Overview
 
 Jedisocks is a tunnel proxy with TCP connections multiplexing on a single TCP connection. This project is still **under development**.
 
 
 
-####How to build:
+#### How to build:
 NOTE: Jedisocks is based on libuv. So, before compile this project, make sure [libuv](https://github.com/libuv/libuv) was successfully installed:
 
 	$ git clone https://github.com/libuv/libuv.git
@@ -23,7 +23,7 @@ Then,
 	$ cmake ..
 	$ make
 
-####Usage
+#### Usage
 ```
 js-[local|server]
 -c <config_file> Path of configuration file that is written in JSON
@@ -33,7 +33,7 @@ js-[local|server]
 -P <remote_port> Port number of your remote server
 -V Enable verbose log
 ```
-####Example of configuration file
+#### Example of configuration file
 We use almost the same config file as shadowsocks do but add new arguments.
 
 ```
@@ -49,7 +49,7 @@ We use almost the same config file as shadowsocks do but add new arguments.
 }
 
 ```
-####Todo:
+#### Todo:
 1. ~~Read JSON file to load configuration.~~ (Accomplished)
 2. Implement a new map container to replace the current one used in this project.
 3. Add SOCKS5/HTTP compatible feature.
@@ -58,11 +58,11 @@ We use almost the same config file as shadowsocks do but add new arguments.
 4. Add flexible plugin system to extend functionality.
 5. ~~Add re-connect mechanism to long multiplexing connection.~~ (Accomplished)
 
-####References
+#### References
 This software is partly based on projects below.
 
 1. [Shadowsocks-libev](https://github.com/shadowsocks/shadowsocks-libev).
 2. [js0n](https://github.com/quartzjer/js0n).
 
-####Contact:
+#### Contact:
 csujedi at icloud dot com
