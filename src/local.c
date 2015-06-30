@@ -296,7 +296,6 @@ static void socks_accept_cb(uv_stream_t* server, int status)
         return;
     }
 
-    fprintf(stderr, "a connection accepted\n");
     server_ctx_t* listener = (server_ctx_t*)server->data;
     socks_handshake_t* socks_hsctx = calloc(1, sizeof(socks_handshake_t));
     socks_hsctx->server.data = socks_hsctx;
@@ -304,7 +303,7 @@ static void socks_accept_cb(uv_stream_t* server, int status)
     /* set central gateway address */
     if (conf.backend_mode) {
         struct sockaddr_in remote_addr;
-        uv_ip4_addr(conf.local_address, conf.localport, &remote_addr);
+        uv_ip4_addr(conf.centralgw_address, conf.gatewayport, &remote_addr);
         socks_hsctx->stage = 2;
         socks_hsctx->atyp = ATYP_IPV4;
         socks_hsctx->addrlen = 4;
